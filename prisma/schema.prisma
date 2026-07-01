@@ -1,0 +1,129 @@
+// prisma/schema.prisma
+// Fas 8: lägger till recordingPath på PracticeSession (valfri sparad
+// ljudinspelning, se Recite-läget). Inga andra ändringar.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id         String      @id @default(cuid())
+  clerkId    String      @unique
+  username   String
+  avatarUrl  String?
+  xp         Int         @default(0)
+  rank       String      @default("The Uninitiated")
+  streakDays Int         @default(0)
+  lastActive DateTime    @default(now())
+  createdAt  DateTime    @default(now())
+
+  works       Work[]
+  medals      Medal[]
+  dailyGoals  DailyGoal[]
+  collections Collection[]
+}
+
+model Work {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  author    String
+  type      String
+  tags      String[]
+  analysis  String?
+  practiceAdvice String?
+  difficulty     String    @default("medium")
+  estimatedMinutes Int     @default(15)
+  createdAt DateTime  @default(now())
+
+  sections    Section[]
+  medals      Medal[]
+  collections CollectionWork[]
+}
+
+model Section {
+  id          String   @id @default(cuid())
+  workId      String
+  work        Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  name        String
+  content     String
+  difficulty  String   @default("medium")
+  status      String   @default("not_started")
+  orderIndex  Int      @default(0)
+
+  // SM-2 spaced repetition
+  sm2Reps     Int      @default(0)
+  sm2EF       Float    @default(2.5)
+  sm2Interval Int      @default(1)
+  nextReview  DateTime?
+
+  createdAt   DateTime @default(now())
+
+  practiceSessions PracticeSession[]
+}
+
+model PracticeSession {
+  id            String   @id @default(cuid())
+  sectionId     String
+  section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  quality       Int      // 0-5 SM-2 quality rating
+  score         Int?     // 0-100 write/recite-läge
+  mode          String   // "read" | "hide" | "write" | "recite"
+  xpEarned      Int      @default(0)
+  durationSecs  Int      @default(0)
+  recordingPath String?  // Fas 8: storage-path i 'recordings'-bucketen, om sparad
+  createdAt     DateTime @default(now())
+}
+
+model Medal {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workId   String
+  work     Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  title    String
+  earnedAt DateTime @default(now())
+}
+
+model DailyGoal {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date          DateTime
+  targetSecs    Int      @default(600)
+  completedSecs Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+// ── Samlingar (Fas 5) ──────────────────────────────────────────────────
+model Collection {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  color      String?
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  works CollectionWork[]
+}
+
+model CollectionWork {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  workId       String
+  work         Work       @relation(fields: [workId], references: [id], onDelete: Cascade)
+  addedAt      DateTime   @default(now())
+
+  @@unique([collectionId, workId])
+}

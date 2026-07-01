@@ -1,0 +1,174 @@
+// app/(app)/profile/page.tsx
+// Uppdaterad Fas 4: BackupPanel tillagd längst ned på profilsidan
+
+import { requireUser } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { getRank, getNextRank, xpToNextRank, RANKS } from "@/lib/xp";
+import { MedalCard } from "@/components/medals/MedalCard";
+import { RankBar } from "@/components/rank/RankBar";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
+import { UsernameEdit } from "@/components/profile/UsernameEdit";
+import { BackupPanel } from "@/components/sync/BackupPanel";
+
+export default async function ProfilePage() {
+  const user = await requireUser();
+
+  const [medals, works] = await Promise.all([
+    prisma.medal.findMany({
+      where:   { userId: user.id },
+      include: { work: { select: { title: true, author: true, type: true } } },
+      orderBy: { earnedAt: "desc" },
+    }),
+    prisma.work.findMany({
+      where:   { userId: user.id },
+      include: { sections: true },
+    }),
+  ]);
+
+  const rank     = getRank(user.xp);
+  const nextRank = getNextRank(user.xp);
+  const toNext   = xpToNextRank(user.xp);
+  const progress = nextRank
+    ? Math.round(((user.xp - rank.xpRequired) / (nextRank.xpRequired - rank.xpRequired)) * 100)
+    : 100;
+
+  const totalSections    = works.reduce((a, w) => a + w.sections.length, 0);
+  const masteredSections = works.reduce(
+    (a, w) => a + w.sections.filter(s => ["mastered", "permanent"].includes(s.status)).length, 0
+  );
+  const learningNow = works.reduce(
+    (a, w) => a + w.sections.filter(s => ["learning", "learned"].includes(s.status)).length, 0
+  );
+
+  const memberSince = new Date(user.createdAt).toLocaleDateString("en-GB", {
+    month: "long",
+    year:  "numeric",
+  });
+
+  return (
+    <div style={{ maxWidth: "760px", margin: "0 auto", padding: "48px 24px 80px" }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "20px", marginBottom: "40px" }}>
+       <AvatarUpload
+  username={user.username}
+  avatarUrl={user.avatarUrl}
+/>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <UsernameEdit initialUsername={user.username} />
+          <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "4px" }}>
+            {user.streakDays} day streak
+            <span style={{ margin: "0 8px", color: "var(--bg4)" }}>·</span>
+            Member since {memberSince}
+          </p>
+        </div>
+      </div>
+
+      {/* ── Rank bar ── */}
+      <div style={{ marginBottom: "24px" }}>
+        <RankBar xp={user.xp} rank={rank} nextRank={nextRank} progressPct={progress} toNext={toNext} />
+      </div>
+
+      {/* ── Rank ladder ── */}
+      <div style={{
+        background: "var(--bg2)", border: "1px solid var(--bord)",
+        borderRadius: "var(--r)", padding: "20px 24px", marginBottom: "24px",
+      }}>
+        <p style={{ fontSize: "10px", letterSpacing: "0.2em", color: "var(--gold)", textTransform: "uppercase", marginBottom: "16px" }}>
+          All ranks
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          {RANKS.map(r => {
+            const isCurrent = r.level === rank.level;
+            const isDone    = r.level < rank.level;
+            return (
+              <div key={r.level} style={{
+                display: "flex", alignItems: "center", gap: "12px",
+                padding: "7px 10px", borderRadius: "var(--r3)",
+                background: isCurrent ? "var(--gold4)" : "transparent",
+              }}>
+                <span style={{
+                  fontFamily: "var(--fd)", fontSize: "13px",
+                  color: isCurrent ? "var(--gold)" : isDone ? "var(--muted)" : "var(--bg4)",
+                  opacity: isDone ? 0.65 : 1, flex: 1,
+                }}>
+                  {r.titleEn}
+                  {isDone && <span style={{ fontSize: "11px", color: "var(--bg4)", marginLeft: "6px" }}>({r.titleSv})</span>}
+                </span>
+                <span style={{ fontSize: "11px", color: "var(--muted)", flexShrink: 0 }}>
+                  {r.xpRequired.toLocaleString()} XP
+                </span>
+                {isDone    && <span style={{ fontSize: "11px", color: "var(--green)", flexShrink: 0 }}>✓</span>}
+                {isCurrent && <span style={{ fontSize: "10px", color: "var(--gold)", letterSpacing: "0.1em", flexShrink: 0 }}>NOW</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Stats ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "36px" }}>
+        <StatTile label="Works"    value={works.length} />
+        <StatTile label="Sections" value={totalSections} />
+        <StatTile label="Mastered" value={masteredSections} accent />
+        <StatTile label="Learning" value={learningNow} />
+        <StatTile label="Medals"   value={medals.length} accent />
+        <StatTile label="Streak"   value={user.streakDays} suffix="days" />
+      </div>
+
+      {/* ── Medals ── */}
+      <div style={{ marginBottom: "12px", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <h2 style={{ fontFamily: "var(--fd)", fontSize: "22px", fontWeight: 300, color: "var(--parch)", letterSpacing: "0.06em" }}>
+          Medals
+        </h2>
+        {medals.length > 0 && <span style={{ fontSize: "12px", color: "var(--muted)" }}>{medals.length} earned</span>}
+      </div>
+
+      {medals.length === 0 ? (
+        <div style={{
+          padding: "48px 24px", textAlign: "center", color: "var(--muted)", fontSize: "14px",
+          background: "var(--bg2)", border: "1px solid var(--bord)", borderRadius: "var(--r)",
+          marginBottom: "36px",
+        }}>
+          <p style={{ fontFamily: "var(--fd)", fontSize: "18px", marginBottom: "8px", color: "var(--bg4)" }}>◇</p>
+          Complete all sections of a work to earn your first medal.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "36px" }}>
+          {medals.map(medal => (
+            <MedalCard
+              key={medal.id}
+              title={medal.title}
+              workTitle={medal.work.title}
+              author={medal.work.author}
+              type={medal.work.type}
+              earnedAt={medal.earnedAt}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Backup & Restore ── */}
+      <BackupPanel />
+    </div>
+  );
+}
+
+function StatTile({ label, value, accent, suffix }: {
+  label: string; value: number; accent?: boolean; suffix?: string;
+}) {
+  return (
+    <div style={{
+      background: "var(--bg2)", border: "1px solid var(--bord)",
+      borderRadius: "var(--r)", padding: "16px 18px",
+    }}>
+      <p style={{ fontSize: "10px", letterSpacing: "0.15em", color: "var(--muted)", textTransform: "uppercase", marginBottom: "6px" }}>
+        {label}
+      </p>
+      <p style={{ fontFamily: "var(--fd)", fontSize: "30px", fontWeight: 300, color: accent ? "var(--gold)" : "var(--parch)" }}>
+        {value}
+        {suffix && <span style={{ fontSize: "14px", color: "var(--muted)", marginLeft: "5px" }}>{suffix}</span>}
+      </p>
+    </div>
+  );
+}

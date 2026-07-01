@@ -1,0 +1,100 @@
+/* app/globals.css */
+/* Rhapsode gold theme — migrerat från original JSX */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg:    #0C1015;
+  --bg2:   #13181F;
+  --bg3:   #1A2029;
+  --bg4:   #222B36;
+  --gold:  #C8A450;
+  --gold2: #A8883A;
+  --gold3: rgba(200, 164, 80, 0.12);
+  --gold4: rgba(200, 164, 80, 0.06);
+  --parch:  #EDE5CC;
+  --parch2: #C8BFA6;
+  --muted:  #7A8899;
+  --red:    #C05F72;
+  --green:  #6A9E6A;
+  --blue:   #5B8BB5;
+  --bord:   rgba(200, 164, 80, 0.13);
+  --fd: 'Cormorant Garamond', Georgia, serif;
+  --fb: 'Inter', system-ui, sans-serif;
+  --r:  10px;
+  --r2:  7px;
+  --r3:  5px;
+  --sh: 0 4px 24px rgba(0, 0, 0, 0.45);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--parch);
+  font-family: var(--fb);
+  min-height: 100vh;
+}
+
+button {
+  font-family: var(--fb);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+
+/* ── Rank nav bar (döljs på smal skärm) ── */
+.rank-nav-bar {
+  display: flex;
+}
+
+@media (max-width: 640px) {
+  .rank-nav-bar { display: none; }
+}
+
+/* ── Clerk component overrides ── */
+.cl-rootBox {
+  --clerk-background: var(--bg2);
+}
+
+.cl-card {
+  background: var(--bg2) !important;
+  border: 1px solid var(--bord) !important;
+  border-radius: var(--r) !important;
+  box-shadow: var(--sh) !important;
+}
+
+.cl-headerTitle,
+.cl-headerSubtitle,
+.cl-formFieldLabel,
+.cl-footerActionText {
+  color: var(--parch) !important;
+}
+
+.cl-formButtonPrimary {
+  background: var(--gold) !important;
+  color: #0C1015 !important;
+  font-weight: 500 !important;
+}
+
+.cl-formButtonPrimary:hover {
+  background: var(--gold2) !important;
+}
+
+.cl-formFieldInput {
+  background: var(--bg3) !important;
+  border: 1px solid var(--bord) !important;
+  color: var(--parch) !important;
+}
+
+.cl-footerActionLink {
+  color: var(--gold) !important;
+}
