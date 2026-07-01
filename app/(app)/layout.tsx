@@ -65,7 +65,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         {/* Clerk user button */}
         <div style={{ marginLeft: "4px" }}>
-          <UserButton afterSignOutUrl="/sign-in" />
+          <UserButton />
         </div>
       </nav>
 
