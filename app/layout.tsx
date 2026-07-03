@@ -19,6 +19,8 @@ export default function RootLayout({
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
       afterSignOutUrl="/sign-in"
+      signInForceRedirectUrl="/library"
+      signUpForceRedirectUrl="/library"
     >
       <html lang="en">
         <body>{children}</body>
