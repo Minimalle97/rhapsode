@@ -12,6 +12,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ProjectionCard } from "@/components/stats/ProjectionCard";
 import type { Metadata } from "next";
 
 // Hämta alltid färsk data — annars kan sidan visa läget före
@@ -233,6 +234,9 @@ export default async function WorkPage({ params }: Props) {
           </p>
         </div>
       )}
+
+      {/* Den långa bågen — visas bara för verk stora nog att den säger något */}
+      <ProjectionCard workId={work.id} />
 
       {work.analysis && (
         <div style={{

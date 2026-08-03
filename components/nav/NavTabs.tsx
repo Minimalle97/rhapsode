@@ -1,12 +1,12 @@
 "use client";
 // components/nav/NavTabs.tsx
-// Navigering med aktiv-markering. Tidigare var flikarna helt döda —
-// ingen hover, ingen indikation på var man befann sig.
+// Today ligger först — det är där dagen börjar.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
+  { href: "/today",    label: "Today"    },
   { href: "/library",  label: "Library"  },
   { href: "/progress", label: "Progress" },
   { href: "/profile",  label: "Profile"  },
