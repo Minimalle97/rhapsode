@@ -1,12 +1,12 @@
 // app/(app)/work/[id]/page.tsx
 //
-// TVÅ FIXAR:
-// 1. `params` är en Promise i Next.js 15+ och måste await:as. Den gamla
-//    koden läste params.id direkt, vilket kraschar sidan.
-// 2. Inga onMouseEnter/onMouseLeave — event handlers får inte skickas
-//    från serverkomponenter. Hover sköts nu i CSS.
+// Visar verkets DELAR när det finns sådana, annars sektionerna direkt.
+// Sektionsräkningen görs med groupBy, så sidan är lika snabb för
+// Divina Commedia som för en sonett.
 //
-// NYTT: sektioner som är dags att repetera lyfts fram överst.
+// FIX: statusen syns nu på varje sektion. Tidigare markerades bara
+// "DUE" och "mastered", vilket gjorde att allt arbete däremellan såg
+// ut som ingenting alls — trots att SM-2 flyttat sektionen framåt.
 
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -14,33 +14,29 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 
+// Hämta alltid färsk data — annars kan sidan visa läget före
+// den senaste övningen.
+export const dynamic = "force-dynamic";
+
 interface Props {
   params: Promise<{ id: string }>;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  not_started: "var(--muted)",
-  learning:    "var(--blue)",
-  learned:     "var(--parch2)",
-  stable:      "var(--green)",
-  mastered:    "var(--gold)",
-  permanent:   "var(--gold)",
-};
+const MASTERED = ["mastered", "permanent"];
 
-const STATUS_LABELS: Record<string, string> = {
-  not_started: "Not started",
-  learning:    "Learning",
-  learned:     "Learned",
-  stable:      "Stable",
-  mastered:    "Mastered",
-  permanent:   "Permanent",
+const STATUS: Record<string, { label: string; color: string; step: number }> = {
+  not_started: { label: "Not started", color: "var(--bg4)",    step: 0 },
+  learning:    { label: "Learning",    color: "var(--blue)",   step: 1 },
+  learned:     { label: "Learned",     color: "var(--parch2)", step: 2 },
+  stable:      { label: "Stable",      color: "var(--green)",  step: 3 },
+  mastered:    { label: "Mastered",    color: "var(--gold)",   step: 4 },
+  permanent:   { label: "Permanent",   color: "var(--gold)",   step: 5 },
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const work = await prisma.work.findUnique({
-    where:  { id },
-    select: { title: true },
+    where: { id }, select: { title: true },
   });
   return { title: work?.title ?? "Work" };
 }
@@ -50,149 +46,170 @@ export default async function WorkPage({ params }: Props) {
   const user = await requireUser();
 
   const work = await prisma.work.findFirst({
-    where:   { id, userId: user.id },
-    include: { sections: { orderBy: { orderIndex: "asc" } } },
+    where: { id, userId: user.id },
+    select: {
+      id: true, title: true, author: true, type: true,
+      analysis: true, practiceAdvice: true,
+      difficulty: true, estimatedMinutes: true,
+    },
   });
-
   if (!work) notFound();
 
-  const total    = work.sections.length;
-  const mastered = work.sections.filter(s =>
-    ["mastered", "permanent"].includes(s.status)
-  ).length;
-  const pct = total > 0 ? Math.round((mastered / total) * 100) : 0;
-
   const now = new Date();
-  const due = work.sections.filter(
-    s => s.nextReview && new Date(s.nextReview) <= now
-  );
-  const nextUp =
-    due[0] ?? work.sections.find(s => s.status === "not_started") ?? null;
+
+  const [parts, statusRows, dueCount, nextSection] = await Promise.all([
+    prisma.part.findMany({
+      where:   { workId: id },
+      orderBy: { orderIndex: "asc" },
+      select:  { id: true, name: true, orderIndex: true },
+    }),
+    prisma.section.groupBy({
+      by:     ["partId", "status"],
+      where:  { workId: id },
+      _count: { _all: true },
+    }),
+    prisma.section.count({ where: { workId: id, nextReview: { lte: now } } }),
+    prisma.section.findFirst({
+      where:   { workId: id, nextReview: { lte: now } },
+      orderBy: { nextReview: "asc" },
+      select:  { id: true, name: true, partId: true },
+    }).then(due =>
+      due ??
+      prisma.section.findFirst({
+        where:   { workId: id, status: "not_started" },
+        orderBy: { orderIndex: "asc" },
+        select:  { id: true, name: true, partId: true },
+      })
+    ),
+  ]);
+
+  // Sammanställ ur groupBy
+  let total = 0, mastered = 0, started = 0;
+  const perPart   = new Map<string, { total: number; mastered: number }>();
+  const byStatus  = new Map<string, number>();
+
+  for (const row of statusRows) {
+    const n   = row._count._all;
+    const key = row.partId ?? "__none__";
+    const acc = perPart.get(key) ?? { total: 0, mastered: 0 };
+
+    acc.total += n;
+    total     += n;
+    byStatus.set(row.status, (byStatus.get(row.status) ?? 0) + n);
+
+    if (row.status !== "not_started") started += n;
+    if (MASTERED.includes(row.status)) {
+      acc.mastered += n;
+      mastered     += n;
+    }
+    perPart.set(key, acc);
+  }
+
+  const pct        = total > 0 ? Math.round((mastered / total) * 100) : 0;
+  const startedPct = total > 0 ? Math.round((started / total) * 100) : 0;
+
+  const nextPartName = nextSection?.partId
+    ? parts.find(p => p.id === nextSection.partId)?.name ?? null
+    : null;
 
   return (
-    <div style={{ maxWidth: "800px", margin: "0 auto", padding: "36px 24px 80px" }}>
-      <Link
-        href="/library"
-        style={{
-          fontSize:       "13px",
-          color:          "var(--muted)",
-          textDecoration: "none",
-          display:        "inline-block",
-          marginBottom:   "24px",
-        }}
-      >
-        ← Library
-      </Link>
+    <div style={{ maxWidth: "820px", margin: "0 auto", padding: "36px 24px 80px" }}>
+      <Link href="/library" style={backLink}>← Library</Link>
 
-      {/* Rubrik */}
-      <header style={{ marginBottom: "28px" }}>
-        <p style={{
-          fontSize:      "10px",
-          letterSpacing: "0.2em",
-          color:         "var(--gold)",
-          textTransform: "uppercase",
-          marginBottom:  "8px",
-        }}>
-          {work.type}
-        </p>
+      <header style={{ marginBottom: "26px" }}>
+        <p style={eyebrow}>{work.type}</p>
         <h1 style={{
-          fontFamily:    "var(--fd)",
-          fontSize:      "clamp(30px, 6vw, 42px)",
-          fontWeight:    300,
-          color:         "var(--parch)",
-          letterSpacing: "0.03em",
-          lineHeight:    1.1,
-          marginBottom:  "6px",
+          fontFamily: "var(--fd)", fontSize: "clamp(30px, 6vw, 42px)",
+          fontWeight: 300, color: "var(--parch)", letterSpacing: "0.03em",
+          lineHeight: 1.1, marginBottom: "6px",
         }}>
           {work.title}
         </h1>
-        <p style={{ fontSize: "15px", color: "var(--muted)", marginBottom: "22px" }}>
+        <p style={{ fontSize: "15px", color: "var(--muted)", marginBottom: "20px" }}>
           {work.author}
         </p>
 
-        {/* Framsteg */}
-        <div style={{ marginBottom: "16px" }}>
+        {/* Två lager: påbörjat i dämpad ton, bemästrat i guld */}
+        <div style={{ marginBottom: "12px" }}>
           <div style={{
-            display:        "flex",
-            justifyContent: "space-between",
-            alignItems:     "baseline",
-            marginBottom:   "7px",
+            display: "flex", justifyContent: "space-between",
+            alignItems: "baseline", marginBottom: "7px",
           }}>
             <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-              {mastered} of {total} mastered
+              {mastered.toLocaleString()} mastered · {started.toLocaleString()} in progress · {total.toLocaleString()} total
             </span>
             <span style={{
-              fontFamily: "var(--fd)",
-              fontSize:   "16px",
-              color:      pct === 100 ? "var(--gold)" : "var(--parch2)",
+              fontFamily: "var(--fd)", fontSize: "16px",
+              color: pct === 100 ? "var(--gold)" : "var(--parch2)",
             }}>
               {pct}%
             </span>
           </div>
-          <div style={{
-            height:       "3px",
-            background:   "var(--bg4)",
-            borderRadius: "2px",
-            overflow:     "hidden",
-          }}>
+          <div style={{ ...track, position: "relative" }}>
             <div style={{
-              height:       "100%",
-              width:        `${pct}%`,
-              background:   "linear-gradient(90deg, var(--gold2), var(--gold))",
-              borderRadius: "2px",
-              transition:   "width .6s ease",
+              position: "absolute", inset: 0,
+              width: `${startedPct}%`, background: "var(--gold3)",
+              borderRadius: "2px", transition: "width .6s ease",
             }} />
+            <div style={{ ...fill, position: "relative", width: `${pct}%` }} />
           </div>
         </div>
 
+        {/* Statusfördelning */}
+        {started > 0 && (
+          <div style={{
+            display: "flex", gap: "14px", flexWrap: "wrap",
+            fontSize: "11px", color: "var(--muted)", marginBottom: "12px",
+          }}>
+            {Object.entries(STATUS)
+              .filter(([key]) => (byStatus.get(key) ?? 0) > 0)
+              .map(([key, s]) => (
+                <span key={key} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                  <span style={{
+                    width: "6px", height: "6px", borderRadius: "50%",
+                    background: s.color,
+                  }} />
+                  {s.label} {byStatus.get(key)}
+                </span>
+              ))}
+          </div>
+        )}
+
         <div style={{
-          display:  "flex",
-          gap:      "18px",
-          fontSize: "12px",
-          color:    "var(--muted)",
-          flexWrap: "wrap",
+          display: "flex", gap: "18px", fontSize: "12px",
+          color: "var(--muted)", flexWrap: "wrap", alignItems: "center",
         }}>
+          {parts.length > 0 && <span>{parts.length} parts</span>}
           <span>{work.difficulty}</span>
-          <span>{work.estimatedMinutes} min estimated</span>
-          {due.length > 0 && (
-            <span style={{ color: "var(--gold)" }}>
-              {due.length} due for review
-            </span>
-          )}
+          {dueCount > 0 && <span style={{ color: "var(--gold)" }}>{dueCount} due now</span>}
+
+          <Link href={`/work/${work.id}/recite`} style={{
+            marginLeft: "auto",
+            padding: "6px 14px",
+            borderRadius: "var(--r3)",
+            border: "1px solid var(--bord)",
+            color: "var(--parch2)",
+            textDecoration: "none",
+            fontSize: "12px",
+          }}>
+            Recite to a beat
+          </Link>
         </div>
       </header>
 
-      {/* Nästa steg — den enda knappen som spelar roll just nu */}
-      {nextUp && (
-        <Link
-          href={`/practice/${work.id}/${nextUp.id}`}
-          style={{ textDecoration: "none", display: "block", marginBottom: "28px" }}
-        >
+      {nextSection && (
+        <Link href={`/practice/${work.id}/${nextSection.id}`} style={{ textDecoration: "none", display: "block", marginBottom: "26px" }}>
           <div style={{
-            background:   "var(--gold3)",
-            border:       "1px solid rgba(200,164,80,0.32)",
-            borderRadius: "var(--r)",
-            padding:      "18px 22px",
-            display:      "flex",
-            alignItems:   "center",
-            gap:          "16px",
+            background: "var(--gold3)", border: "1px solid rgba(200,164,80,0.32)",
+            borderRadius: "var(--r)", padding: "18px 22px",
+            display: "flex", alignItems: "center", gap: "16px",
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{
-                fontSize:      "10px",
-                letterSpacing: "0.2em",
-                color:         "var(--gold)",
-                textTransform: "uppercase",
-                marginBottom:  "5px",
-              }}>
-                {due.length > 0 ? "Due now" : "Start here"}
+              <p style={{ ...eyebrow, marginBottom: "5px" }}>
+                {dueCount > 0 ? "Due now" : "Continue"}
               </p>
-              <p style={{
-                fontFamily: "var(--fd)",
-                fontSize:   "19px",
-                color:      "var(--parch)",
-              }}>
-                {nextUp.name}
+              <p style={{ fontFamily: "var(--fd)", fontSize: "19px", color: "var(--parch)" }}>
+                {nextPartName ? `${nextPartName} · ${nextSection.name}` : nextSection.name}
               </p>
             </div>
             <span style={{ color: "var(--gold)", fontSize: "18px", flexShrink: 0 }}>→</span>
@@ -200,31 +217,35 @@ export default async function WorkPage({ params }: Props) {
         </Link>
       )}
 
-      {/* Analys */}
+      {/* Inget förfallet just nu — förklara varför */}
+      {!nextSection && total > 0 && (
+        <div style={{
+          background: "var(--bg2)", border: "1px solid var(--bord)",
+          borderRadius: "var(--r)", padding: "18px 22px",
+          marginBottom: "26px", textAlign: "center",
+        }}>
+          <p style={{ fontSize: "13px", color: "var(--parch2)", marginBottom: "4px" }}>
+            Nothing due right now.
+          </p>
+          <p style={{ fontSize: "12px", color: "var(--muted)" }}>
+            Sections come back on their own schedule. Practising early doesn&apos;t
+            strengthen the memory the way spacing does.
+          </p>
+        </div>
+      )}
+
       {work.analysis && (
         <div style={{
-          background:   "var(--bg3)",
-          border:       "1px solid var(--bord)",
-          borderRadius: "var(--r)",
-          padding:      "20px 22px",
-          marginBottom: "32px",
+          background: "var(--bg3)", border: "1px solid var(--bord)",
+          borderRadius: "var(--r)", padding: "20px 22px", marginBottom: "30px",
         }}>
-          <p style={{
-            fontSize:   "13px",
-            lineHeight: 1.75,
-            color:      "var(--parch2)",
-            fontStyle:  "italic",
-          }}>
+          <p style={{ fontSize: "13px", lineHeight: 1.75, color: "var(--parch2)", fontStyle: "italic" }}>
             {work.analysis}
           </p>
           {work.practiceAdvice && (
             <p style={{
-              fontSize:  "12px",
-              lineHeight: 1.7,
-              color:     "var(--muted)",
-              marginTop: "14px",
-              paddingTop: "14px",
-              borderTop: "1px solid var(--bord)",
+              fontSize: "12px", lineHeight: 1.7, color: "var(--muted)",
+              marginTop: "14px", paddingTop: "14px", borderTop: "1px solid var(--bord)",
             }}>
               {work.practiceAdvice}
             </p>
@@ -232,92 +253,176 @@ export default async function WorkPage({ params }: Props) {
         </div>
       )}
 
-      {/* Sektioner */}
-      <h2 style={{
-        fontFamily:    "var(--fd)",
-        fontSize:      "19px",
-        fontWeight:    400,
-        color:         "var(--parch)",
-        letterSpacing: "0.04em",
-        marginBottom:  "14px",
-      }}>
-        Sections
-      </h2>
+      {parts.length > 0 ? (
+        <>
+          <h2 style={h2}>Parts</h2>
+          <ol style={list}>
+            {parts.map(part => {
+              const s    = perPart.get(part.id) ?? { total: 0, mastered: 0 };
+              const p    = s.total > 0 ? Math.round((s.mastered / s.total) * 100) : 0;
+              const done = p === 100;
 
-      <ol style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
-        {work.sections.map((section, i) => {
-          const isDue = !!section.nextReview && new Date(section.nextReview) <= now;
+              return (
+                <li key={part.id}>
+                  <Link href={`/work/${work.id}/part/${part.id}`} className="section-row" style={rowLink}>
+                    <div style={{
+                      ...row,
+                      border: `1px solid ${done ? "rgba(200,164,80,0.28)" : "var(--bord)"}`,
+                    }}>
+                      <span style={numCell}>{part.orderIndex + 1}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{
+                          fontSize: "14px",
+                          color: done ? "var(--gold)" : "var(--parch)",
+                          marginBottom: "6px",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {part.name}
+                        </p>
+                        <div style={{ ...track, height: "2px" }}>
+                          <div style={{ ...fill, width: `${p}%` }} />
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: "11px", color: "var(--muted)",
+                        flexShrink: 0, minWidth: "58px", textAlign: "right",
+                      }}>
+                        {s.mastered}/{s.total}
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      ) : (
+        <FlatSections workId={work.id} />
+      )}
+    </div>
+  );
+}
+
+/** Verk utan delar — sektionerna direkt, med status och nästa repetition. */
+async function FlatSections({ workId }: { workId: string }) {
+  const sections = await prisma.section.findMany({
+    where:   { workId, partId: null },
+    orderBy: { orderIndex: "asc" },
+    select: {
+      id: true, name: true, content: true,
+      status: true, nextReview: true, sm2Reps: true,
+    },
+  });
+
+  const now = new Date();
+
+  return (
+    <>
+      <h2 style={h2}>Sections</h2>
+      <ol style={list}>
+        {sections.map((s, i) => {
+          const meta = STATUS[s.status] ?? STATUS.not_started;
+          const due  = !!s.nextReview && new Date(s.nextReview) <= now;
 
           return (
-            <li key={section.id}>
-              <Link
-                href={`/practice/${work.id}/${section.id}`}
-                className="section-row"
-                style={{ textDecoration: "none", display: "block" }}
-              >
+            <li key={s.id}>
+              <Link href={`/practice/${workId}/${s.id}`} className="section-row" style={rowLink}>
                 <div style={{
-                  background:   "var(--bg2)",
-                  border:       `1px solid ${isDue ? "rgba(200,164,80,0.3)" : "var(--bord)"}`,
-                  borderRadius: "var(--r2)",
-                  padding:      "15px 18px",
-                  display:      "flex",
-                  alignItems:   "center",
-                  gap:          "14px",
+                  ...row,
+                  border: `1px solid ${due ? "rgba(200,164,80,0.3)" : "var(--bord)"}`,
+                  alignItems: "flex-start",
                 }}>
-                  <span style={{
-                    fontFamily: "var(--fd)",
-                    fontSize:   "14px",
-                    color:      "var(--bg4)",
-                    width:      "20px",
-                    flexShrink: 0,
-                  }}>
-                    {i + 1}
-                  </span>
+                  <span style={{ ...numCell, paddingTop: "2px" }}>{i + 1}</span>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{
-                      fontSize:     "14px",
-                      color:        "var(--parch)",
-                      marginBottom: "3px",
+                      fontSize: "13px", color: "var(--parch2)",
+                      lineHeight: 1.5, marginBottom: "7px",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
-                      {section.name}
+                      {s.content.split("\n")[0]}
                     </p>
-                    <p style={{
-                      fontSize:     "12px",
-                      color:        "var(--muted)",
-                      lineHeight:   1.5,
-                      overflow:     "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace:   "nowrap",
-                    }}>
-                      {section.content.slice(0, 90)}
-                    </p>
+
+                    {/* Fyra steg till bemästrad */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", gap: "3px" }}>
+                        {[1, 2, 3, 4].map(step => (
+                          <span
+                            key={step}
+                            style={{
+                              width: "14px", height: "2px", borderRadius: "1px",
+                              background: meta.step >= step ? meta.color : "var(--bg4)",
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <span style={{ fontSize: "11px", color: meta.color }}>
+                        {meta.label}
+                      </span>
+                      {s.nextReview && !due && (
+                        <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                          · back in {daysUntil(s.nextReview, now)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <p style={{
-                      fontSize:     "11px",
-                      color:        STATUS_COLORS[section.status] ?? "var(--muted)",
-                      marginBottom: "3px",
+                  {due && (
+                    <span style={{
+                      fontSize: "10px", color: "var(--gold)",
+                      letterSpacing: "0.1em", flexShrink: 0, paddingTop: "2px",
                     }}>
-                      {STATUS_LABELS[section.status] ?? section.status}
-                    </p>
-                    {isDue && (
-                      <p style={{
-                        fontSize:      "10px",
-                        color:         "var(--gold)",
-                        letterSpacing: "0.1em",
-                      }}>
-                        DUE
-                      </p>
-                    )}
-                  </div>
+                      DUE
+                    </span>
+                  )}
                 </div>
               </Link>
             </li>
           );
         })}
       </ol>
-    </div>
+    </>
   );
 }
+
+function daysUntil(date: Date, now: Date): string {
+  const days = Math.ceil((new Date(date).getTime() - now.getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day";
+  return `${days} days`;
+}
+
+// ── Stilar ───────────────────────────────────────────────────────────
+const backLink: React.CSSProperties = {
+  fontSize: "13px", color: "var(--muted)",
+  textDecoration: "none", display: "inline-block", marginBottom: "24px",
+};
+const eyebrow: React.CSSProperties = {
+  fontSize: "10px", letterSpacing: "0.2em",
+  color: "var(--gold)", textTransform: "uppercase", marginBottom: "8px",
+};
+const h2: React.CSSProperties = {
+  fontFamily: "var(--fd)", fontSize: "19px", fontWeight: 400,
+  color: "var(--parch)", letterSpacing: "0.04em", marginBottom: "14px",
+};
+const list: React.CSSProperties = {
+  listStyle: "none", display: "flex", flexDirection: "column", gap: "6px",
+};
+const rowLink: React.CSSProperties = { textDecoration: "none", display: "block" };
+const row: React.CSSProperties = {
+  background: "var(--bg2)", borderRadius: "var(--r2)",
+  padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px",
+};
+const numCell: React.CSSProperties = {
+  fontFamily: "var(--fd)", fontSize: "13px",
+  color: "var(--bg4)", width: "24px", flexShrink: 0,
+};
+const track: React.CSSProperties = {
+  height: "3px", background: "var(--bg4)",
+  borderRadius: "2px", overflow: "hidden",
+};
+const fill: React.CSSProperties = {
+  height: "100%",
+  background: "linear-gradient(90deg, var(--gold2), var(--gold))",
+  borderRadius: "2px", transition: "width .6s ease",
+};

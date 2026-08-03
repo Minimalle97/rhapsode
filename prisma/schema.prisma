@@ -1,6 +1,5 @@
 // prisma/schema.prisma
-// Fas 8: lägger till recordingPath på PracticeSession (valfri sparad
-// ljudinspelning, se Recite-läget). Inga andra ändringar.
+// Fas 8 + delar.
 
 generator client {
   provider = "prisma-client-js"
@@ -30,56 +29,83 @@ model User {
 }
 
 model Work {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title     String
-  author    String
-  type      String
-  tags      String[]
-  analysis  String?
-  practiceAdvice String?
-  difficulty     String    @default("medium")
-  estimatedMinutes Int     @default(15)
-  createdAt DateTime  @default(now())
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  author           String
+  type             String
+  tags             String[]
+  analysis         String?
+  practiceAdvice   String?
+  difficulty       String   @default("medium")
+  estimatedMinutes Int      @default(15)
+  createdAt        DateTime @default(now())
 
+  parts       Part[]
   sections    Section[]
   medals      Medal[]
   collections CollectionWork[]
+
+  @@index([userId])
+}
+
+// ── Delar: sånger, böcker, akter, scener ───────────────────────────────
+model Part {
+  id         String   @id @default(cuid())
+  workId     String
+  work       Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  name       String
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  sections Section[]
+
+  @@index([workId, orderIndex])
 }
 
 model Section {
-  id          String   @id @default(cuid())
-  workId      String
-  work        Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
-  name        String
-  content     String
-  difficulty  String   @default("medium")
-  status      String   @default("not_started")
-  orderIndex  Int      @default(0)
+  id         String  @id @default(cuid())
+  workId     String
+  work       Work    @relation(fields: [workId], references: [id], onDelete: Cascade)
 
-  // SM-2 spaced repetition
-  sm2Reps     Int      @default(0)
-  sm2EF       Float    @default(2.5)
-  sm2Interval Int      @default(1)
+  partId     String?
+  part       Part?   @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  name       String
+  content    String
+  difficulty String  @default("medium")
+  status     String  @default("not_started")
+  orderIndex Int     @default(0)
+
+  sm2Reps     Int       @default(0)
+  sm2EF       Float     @default(2.5)
+  sm2Interval Int       @default(1)
   nextReview  DateTime?
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   practiceSessions PracticeSession[]
+
+  @@index([workId, orderIndex])
+  @@index([partId, orderIndex])
+  @@index([nextReview])
 }
 
 model PracticeSession {
   id            String   @id @default(cuid())
   sectionId     String
   section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  quality       Int      // 0-5 SM-2 quality rating
-  score         Int?     // 0-100 write/recite-läge
-  mode          String   // "read" | "hide" | "write" | "recite"
+  quality       Int
+  score         Int?
+  mode          String
   xpEarned      Int      @default(0)
   durationSecs  Int      @default(0)
-  recordingPath String?  // Fas 8: storage-path i 'recordings'-bucketen, om sparad
+  recordingPath String?
   createdAt     DateTime @default(now())
+
+  @@index([sectionId])
+  @@index([createdAt])
 }
 
 model Medal {
@@ -90,6 +116,8 @@ model Medal {
   work     Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
   title    String
   earnedAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model DailyGoal {
@@ -104,7 +132,7 @@ model DailyGoal {
   @@unique([userId, date])
 }
 
-// ── Samlingar (Fas 5) ──────────────────────────────────────────────────
+// ── Samlingar ──────────────────────────────────────────────────────────
 model Collection {
   id         String   @id @default(cuid())
   userId     String
@@ -115,6 +143,8 @@ model Collection {
   createdAt  DateTime @default(now())
 
   works CollectionWork[]
+
+  @@index([userId])
 }
 
 model CollectionWork {
