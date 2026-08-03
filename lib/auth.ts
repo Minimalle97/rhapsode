@@ -1,26 +1,29 @@
 // lib/auth.ts
 // Clerk-helpers: hämta aktuell användare och synka mot DB.
 //
-// OPTIMERING: requireUser() anropades tidigare en gång per komponent som
-// behövde användaren — layout, sida, och varje API-route. Varje anrop gjorde
-// ett nätverksanrop till Clerk PLUS en upsert mot databasen. På en enda
-// sidladdning blev det 3–4 rundturer.
+// Cachad per request med React `cache()` — anropa så många gånger du vill,
+// det kostar bara ett Clerk-anrop och en databasfråga totalt.
 //
-// React `cache()` gör att funktionen körs EN gång per request och att alla
-// efterföljande anrop får samma resultat direkt ur minnet.
+// UPPDATERAD: hämtar nu även `handle`, som vänfunktionen behöver.
 
 import { cache } from "react";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "./db";
-import type { RhapsodeUser } from "@/types";
 
-/**
- * Hämtar inloggad användare och ser till att en matchande DB-rad finns.
- * Kastar "UNAUTHORIZED" om ingen är inloggad.
- *
- * Cachad per request — anropa så många gånger du vill, det kostar inget extra.
- */
-export const requireUser = cache(async (): Promise<RhapsodeUser> => {
+export interface SessionUser {
+  id:         string;
+  clerkId:    string;
+  username:   string;
+  handle:     string | null;
+  avatarUrl:  string | null;
+  xp:         number;
+  rank:       string;
+  streakDays: number;
+  lastActive: Date;
+  createdAt:  Date;
+}
+
+export const requireUser = cache(async (): Promise<SessionUser> => {
   const { userId: clerkId } = await auth();
   if (!clerkId) throw new Error("UNAUTHORIZED");
 
@@ -40,31 +43,20 @@ export const requireUser = cache(async (): Promise<RhapsodeUser> => {
       username,
       avatarUrl: clerkUser.imageUrl ?? null,
     },
-    update: {
-      lastActive: new Date(),
-    },
-    // Hämta bara kolumnerna vi faktiskt använder
+    // Rör inte avatarUrl — den kan ha ersatts av en egen uppladdning
+    update: { lastActive: new Date() },
     select: {
-      id: true,
-      clerkId: true,
-      username: true,
-      avatarUrl: true,
-      xp: true,
-      rank: true,
-      streakDays: true,
-      lastActive: true,
-      createdAt: true,
+      id: true, clerkId: true, username: true, handle: true,
+      avatarUrl: true, xp: true, rank: true,
+      streakDays: true, lastActive: true, createdAt: true,
     },
   });
 
-  return user as RhapsodeUser;
+  return user;
 });
 
-/**
- * Som requireUser men kastar inte — returnerar null om utloggad.
- * Använd i komponenter som ska funka både in- och utloggade.
- */
-export const getUser = cache(async (): Promise<RhapsodeUser | null> => {
+/** Som requireUser men kastar inte — returnerar null om utloggad. */
+export const getUser = cache(async (): Promise<SessionUser | null> => {
   try {
     return await requireUser();
   } catch {

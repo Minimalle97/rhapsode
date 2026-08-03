@@ -1,6 +1,5 @@
 "use client";
 // components/nav/NavTabs.tsx
-// Today ligger först — det är där dagen börjar.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,6 +7,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/today",    label: "Today"    },
   { href: "/library",  label: "Library"  },
+  { href: "/friends",  label: "Friends"  },
   { href: "/progress", label: "Progress" },
   { href: "/profile",  label: "Profile"  },
 ];
