@@ -1,5 +1,13 @@
 // app/(app)/work/[id]/edit/page.tsx
-// Städa och rätta ett importerat verk.
+//
+// RÄTTAT: sidan skickade tidigare varje sektions FULLA text till
+// webbläsaren. För en pjäs på femhundra sektioner innebar det hela
+// pjäsen två gånger — en gång i serverpayloaden, en gång i React-state.
+// För ett verk på flera tusen sektioner frös fliken.
+//
+// Nu skickas bara ett kort utdrag per sektion, och sidan hämtar hem
+// hundra åt gången. Hela texten hämtas först när du öppnar en sektion
+// för redigering.
 
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -10,8 +18,12 @@ import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
 
+const PER_PAGE = 100;
+const PREVIEW  = 400;
+
 interface Props {
-  params: Promise<{ id: string }>;
+  params:       Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -22,25 +34,36 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: work ? `Clean up · ${work.title}` : "Clean up" };
 }
 
-export default async function EditWorkPage({ params }: Props) {
+export default async function EditWorkPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const user = await requireUser();
+  const sp     = await searchParams;
+  const user   = await requireUser();
 
   const work = await prisma.work.findFirst({
     where:  { id, userId: user.id },
-    select: {
-      id: true, title: true, author: true, type: true,
-      sections: {
-        orderBy: { orderIndex: "asc" },
-        select: {
-          id: true, name: true, content: true,
-          status: true, orderIndex: true,
-          part: { select: { name: true } },
-        },
-      },
-    },
+    select: { id: true, title: true, author: true, type: true },
   });
   if (!work) notFound();
+
+  const total = await prisma.section.count({ where: { workId: id } });
+
+  const pageCount = Math.max(1, Math.ceil(total / PER_PAGE));
+  const page      = Math.min(
+    pageCount - 1,
+    Math.max(0, (Number(sp.page) || 1) - 1)
+  );
+
+  const rows = await prisma.section.findMany({
+    where:   { workId: id },
+    orderBy: { orderIndex: "asc" },
+    skip:    page * PER_PAGE,
+    take:    PER_PAGE,
+    select: {
+      id: true, name: true, status: true, orderIndex: true,
+      content: true,
+      part: { select: { name: true } },
+    },
+  });
 
   return (
     <>
@@ -50,7 +73,7 @@ export default async function EditWorkPage({ params }: Props) {
           title={work.title}
           author={work.author}
           type={work.type}
-          sectionCount={work.sections.length}
+          sectionCount={total}
         />
       </div>
 
@@ -58,10 +81,16 @@ export default async function EditWorkPage({ params }: Props) {
         workId={work.id}
         title={work.title}
         author={work.author}
-        sections={work.sections.map(s => ({
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        sections={rows.map(s => ({
           id:         s.id,
           name:       s.name,
-          content:    s.content,
+          // Bara ett utdrag går över tråden. Nog för att söka i,
+          // nog för att känna igen skräp, men inte hela verket.
+          preview:    s.content.slice(0, PREVIEW),
+          truncated:  s.content.length > PREVIEW,
           status:     s.status,
           orderIndex: s.orderIndex,
           partName:   s.part?.name ?? null,

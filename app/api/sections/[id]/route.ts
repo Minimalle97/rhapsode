@@ -1,13 +1,14 @@
 // app/api/sections/[id]/route.ts
 //
-// PATCH  — redigera en sektions namn eller text
-// DELETE — ta bort en sektion
-// POST   — dela en sektion i två, eller slå ihop med nästa
+// GET    — hämta en sektions fulla text
+// PATCH  — redigera namn eller text
+// DELETE — ta bort
+// POST   — dela i två, eller slå ihop med nästa
 //
-// Varför det behövs: PDF-extraktion är inte perfekt. En strof kan delas
-// mitt itu, en sidfot kan följa med in i texten, en rubrik kan hamna i
-// fel sektion. Utan möjlighet att rätta är enda utvägen att radera hela
-// verket och börja om — och då blir det inte gjort.
+// GET är ny och finns för städsidans skull: den listar sektioner med
+// korta utdrag och hämtar hela texten först när du öppnar en för
+// redigering. Att skicka hela verket till webbläsaren för att visa en
+// lista var det som fick fliken att frysa.
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
@@ -17,7 +18,6 @@ interface Ctx {
   params: Promise<{ id: string }>;
 }
 
-/** Kontrollerar att sektionen tillhör den inloggade användaren. */
 async function owned(sectionId: string, userId: string) {
   return prisma.section.findFirst({
     where:  { id: sectionId, work: { userId } },
@@ -26,6 +26,25 @@ async function owned(sectionId: string, userId: string) {
       name: true, content: true, orderIndex: true,
     },
   });
+}
+
+// ── Hämta ─────────────────────────────────────────────────────────────
+export async function GET(_req: NextRequest, { params }: Ctx) {
+  try {
+    const { id } = await params;
+    const user = await requireUser();
+
+    const section = await owned(id, user.id);
+    if (!section) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    return NextResponse.json({
+      id:      section.id,
+      name:    section.name,
+      content: section.content,
+    });
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 // ── Redigera ──────────────────────────────────────────────────────────
@@ -49,7 +68,6 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       }
       data.content = content;
     }
-
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }
@@ -77,11 +95,13 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
 
     await prisma.section.delete({ where: { id } });
 
-    // Stäng luckan i ordningen
-    await prisma.section.updateMany({
-      where: { workId: section.workId, orderIndex: { gt: section.orderIndex } },
-      data:  { orderIndex: { decrement: 1 } },
-    });
+    // Stäng luckan — ett uttryck, inte ett per rad
+    await prisma.$executeRaw`
+      UPDATE "Section"
+      SET "orderIndex" = "orderIndex" - 1
+      WHERE "workId" = ${section.workId}
+        AND "orderIndex" > ${section.orderIndex}
+    `;
 
     return NextResponse.json({ deleted: true });
   } catch (err) {
@@ -100,7 +120,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     const { action, splitAt } = await req.json();
 
-    // ── Dela i två vid en teckenposition ──────────────────────────
     if (action === "split") {
       const at = Number(splitAt);
       if (!Number.isFinite(at) || at <= 0 || at >= section.content.length) {
@@ -112,7 +131,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
       const first  = section.content.slice(0, at).trim();
       const second = section.content.slice(at).trim();
-
       if (!first || !second) {
         return NextResponse.json(
           { error: "Both halves must contain text" },
@@ -120,16 +138,17 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         );
       }
 
-      // Gör plats efter den här sektionen
-      await prisma.section.updateMany({
-        where: { workId: section.workId, orderIndex: { gt: section.orderIndex } },
-        data:  { orderIndex: { increment: 1 } },
-      });
+      await prisma.$executeRaw`
+        UPDATE "Section"
+        SET "orderIndex" = "orderIndex" + 1
+        WHERE "workId" = ${section.workId}
+          AND "orderIndex" > ${section.orderIndex}
+      `;
 
       const [updated, created] = await prisma.$transaction([
         prisma.section.update({
-          where: { id },
-          data:  { content: first },
+          where:  { id },
+          data:   { content: first },
           select: { id: true, name: true, content: true },
         }),
         prisma.section.create({
@@ -147,10 +166,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ split: true, first: updated, second: created });
     }
 
-    // ── Slå ihop med nästa sektion ────────────────────────────────
     if (action === "mergeNext") {
       const next = await prisma.section.findFirst({
-        where:   {
+        where: {
           workId:     section.workId,
           partId:     section.partId,
           orderIndex: { gt: section.orderIndex },
@@ -173,10 +191,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         prisma.section.delete({ where: { id: next.id } }),
       ]);
 
-      await prisma.section.updateMany({
-        where: { workId: section.workId, orderIndex: { gt: next.orderIndex } },
-        data:  { orderIndex: { decrement: 1 } },
-      });
+      await prisma.$executeRaw`
+        UPDATE "Section"
+        SET "orderIndex" = "orderIndex" - 1
+        WHERE "workId" = ${section.workId}
+          AND "orderIndex" > ${next.orderIndex}
+      `;
 
       return NextResponse.json({ merged: true, content: merged });
     }

@@ -1,48 +1,57 @@
 "use client";
 // components/library/WorkEditor.tsx
 // Städa och rätta ett importerat verk.
+//
+// Sidan får bara utdrag ur varje sektion. Hela texten hämtas när du
+// öppnar en för redigering. Det är skillnaden mellan några kilobyte och
+// hela verket.
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { flagJunk, guessFirstRealSection } from "@/lib/junk";
 
-interface Section {
+interface Row {
   id:         string;
   name:       string;
-  content:    string;
+  preview:    string;
+  truncated:  boolean;
   status:     string;
   orderIndex: number;
   partName:   string | null;
 }
 
 interface Props {
-  workId:   string;
-  title:    string;
-  author:   string;
-  sections: Section[];
+  workId:    string;
+  title:     string;
+  author:    string;
+  total:     number;
+  page:      number;
+  pageCount: number;
+  sections:  Row[];
 }
 
-const PAGE = 40;
-
-export function WorkEditor({ workId, title, author, sections }: Props) {
+export function WorkEditor({
+  workId, title, total, page, pageCount, sections,
+}: Props) {
   const router = useRouter();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing]   = useState<string | null>(null);
   const [draft, setDraft]       = useState({ name: "", content: "" });
+  const [loadingText, setLoad]  = useState(false);
   const [filter, setFilter]     = useState("");
   const [onlyJunk, setOnlyJunk] = useState(false);
-  const [page, setPage]         = useState(0);
   const [busy, setBusy]         = useState(false);
   const [error, setError]       = useState<string | null>(null);
-  const [confirm, setConfirm]   = useState<null | { action: string; count: number; run: () => void }>(null);
+  const [confirm, setConfirm]   = useState<
+    null | { action: string; run: () => void }
+  >(null);
 
-  const areaRef = useRef<HTMLTextAreaElement>(null);
+  const [cursor, setCursor] = useState(0);
 
-  // Markera misstänkta sektioner
   const flagged = useMemo(
-    () => new Map(sections.map(s => [s.id, flagJunk(s.content, s.name)])),
+    () => new Map(sections.map(s => [s.id, flagJunk(s.preview, s.name)])),
     [sections]
   );
 
@@ -52,26 +61,27 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
   );
 
   const suggestedStart = useMemo(
-    () => guessFirstRealSection(sections),
-    [sections]
+    () =>
+      page === 0
+        ? guessFirstRealSection(
+            sections.map(s => ({ id: s.id, name: s.name, content: s.preview }))
+          )
+        : null,
+    [sections, page]
   );
 
-  // Filtrering
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return sections.filter(s => {
       if (onlyJunk && !flagged.get(s.id)?.isLikelyJunk) return false;
       if (!q) return true;
       return (
-        s.content.toLowerCase().includes(q) ||
+        s.preview.toLowerCase().includes(q) ||
         s.name.toLowerCase().includes(q) ||
         (s.partName ?? "").toLowerCase().includes(q)
       );
     });
   }, [sections, filter, onlyJunk, flagged]);
-
-  const pageItems = visible.slice(page * PAGE, page * PAGE + PAGE);
-  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE));
 
   // ── Anrop ─────────────────────────────────────────────────────────
   async function bulk(action: string, payload: Record<string, unknown> = {}) {
@@ -92,6 +102,25 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Hämtar hela texten först nu — den fanns aldrig i listan. */
+  async function openEditor(row: Row) {
+    setEditing(row.id);
+    setDraft({ name: row.name, content: "" });
+    setError(null);
+    setLoad(true);
+    try {
+      const res  = await fetch(`/api/sections/${row.id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not load");
+      setDraft({ name: data.name, content: data.content });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load");
+      setEditing(null);
+    } finally {
+      setLoad(false);
     }
   }
 
@@ -116,22 +145,22 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
   }
 
   async function splitAtCursor(id: string) {
-    const at = areaRef.current?.selectionStart ?? 0;
-    if (at <= 0 || at >= draft.content.length) {
+    if (cursor <= 0 || cursor >= draft.content.length) {
       setError("Put the cursor where the break should fall.");
       return;
     }
     setBusy(true);
+    setError(null);
     try {
       await fetch(`/api/sections/${id}`, {
-        method: "PATCH",
+        method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
+        body:    JSON.stringify(draft),
       });
       const res = await fetch(`/api/sections/${id}`, {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "split", splitAt: at }),
+        body:    JSON.stringify({ action: "split", splitAt: cursor }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -152,58 +181,56 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
     });
   }
 
-  function selectAllVisible() {
-    setSelected(new Set(visible.map(s => s.id)));
-  }
-
-  function selectFlagged() {
-    setSelected(new Set(sections.filter(s => flagged.get(s.id)?.isLikelyJunk).map(s => s.id)));
-  }
+  const goto = (p: number) =>
+    router.push(`/work/${workId}/edit?page=${p + 1}`);
 
   // ── Vy ────────────────────────────────────────────────────────────
   return (
     <div style={{ maxWidth: "880px", margin: "0 auto", padding: "0 24px 120px" }}>
       <Link href={`/work/${workId}`} style={{
         fontSize: "13px", color: "var(--muted)",
-        textDecoration: "none", display: "inline-block", marginBottom: "20px",
+        textDecoration: "none", display: "inline-block", marginBottom: "16px",
       }}>
         ← {title}
       </Link>
 
-      <h1 style={{
-        fontFamily: "var(--fd)", fontSize: "30px", fontWeight: 300,
-        color: "var(--parch)", letterSpacing: "0.04em", marginBottom: "4px",
-      }}>
-        Clean up
-      </h1>
-      <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "22px" }}>
-        {sections.length.toLocaleString()} sections · {author}
+      <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "18px" }}>
+        {total.toLocaleString()} sections
+        {pageCount > 1 && ` · showing ${page * 100 + 1}–${Math.min((page + 1) * 100, total)}`}
       </p>
 
       {/* Förslag */}
       {suggestedStart && junkCount > 2 && (
         <div style={{
           background: "var(--gold4)", border: "1px solid rgba(200,164,80,0.28)",
-          borderRadius: "var(--r)", padding: "16px 18px", marginBottom: "18px",
+          borderRadius: "var(--r)", padding: "16px 18px", marginBottom: "16px",
         }}>
           <p style={{ fontSize: "13px", color: "var(--parch2)", lineHeight: 1.6, marginBottom: "12px" }}>
-            {junkCount} sections look like front matter or editorial apparatus
-            rather than the work itself. The text proper seems to begin further
-            down.
+            {junkCount} sections on this page look like front matter or editorial
+            apparatus rather than the work itself.
           </p>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <button onClick={selectFlagged} style={btnGhost}>
+            <button
+              onClick={() =>
+                setSelected(new Set(
+                  sections.filter(s => flagged.get(s.id)?.isLikelyJunk).map(s => s.id)
+                ))
+              }
+              style={btnGhost}
+            >
               Select the {junkCount} flagged
             </button>
             <button
-              onClick={() => setConfirm({
-                action: "Delete everything before the suggested start",
-                count:  sections.findIndex(s => s.id === suggestedStart),
-                run:    () => bulk("trimBefore", { sectionId: suggestedStart }),
-              })}
+              onClick={() => {
+                const idx = sections.findIndex(s => s.id === suggestedStart);
+                setConfirm({
+                  action: `Delete everything before section ${sections[idx].orderIndex + 1}`,
+                  run:    () => bulk("trimBefore", { sectionId: suggestedStart }),
+                });
+              }}
               style={btnGhost}
             >
-              Start the work at section {(sections.findIndex(s => s.id === suggestedStart) + 1)}
+              The work starts here
             </button>
           </div>
         </div>
@@ -213,16 +240,16 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
       <div style={{ display: "flex", gap: "8px", marginBottom: "14px", flexWrap: "wrap" }}>
         <input
           value={filter}
-          onChange={e => { setFilter(e.target.value); setPage(0); }}
-          placeholder="Search the text…"
+          onChange={e => setFilter(e.target.value)}
+          placeholder="Search this page…"
           style={{ ...field, flex: "1 1 220px" }}
         />
         <button
-          onClick={() => { setOnlyJunk(v => !v); setPage(0); }}
+          onClick={() => setOnlyJunk(v => !v)}
           style={{
             ...btnGhost,
-            background: onlyJunk ? "var(--gold3)" : "transparent",
-            color:      onlyJunk ? "var(--gold)" : "var(--muted)",
+            background:  onlyJunk ? "var(--gold3)" : "transparent",
+            color:       onlyJunk ? "var(--gold)" : "var(--muted)",
             borderColor: onlyJunk ? "rgba(200,164,80,0.4)" : "var(--bord)",
           }}
         >
@@ -242,23 +269,22 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
 
       {/* Sektionerna */}
       <ol style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "5px" }}>
-        {pageItems.map(s => {
+        {visible.map(s => {
           const flag   = flagged.get(s.id);
           const isSel  = selected.has(s.id);
           const isEdit = editing === s.id;
-          const n      = s.orderIndex + 1;
 
           return (
             <li key={s.id}>
               <div style={{
-                background:   isEdit ? "var(--bg3)" : "var(--bg2)",
+                background: isEdit ? "var(--bg3)" : "var(--bg2)",
                 border: `1px solid ${
                   isSel ? "rgba(200,164,80,0.5)"
                   : flag?.isLikelyJunk ? "rgba(192,95,114,0.28)"
                   : "var(--bord)"
                 }`,
                 borderRadius: "var(--r2)",
-                padding:      "12px 14px",
+                padding: "12px 14px",
               }}>
                 <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                   <input
@@ -266,48 +292,57 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
                     checked={isSel}
                     onChange={() => toggle(s.id)}
                     style={{ marginTop: "3px", accentColor: "var(--gold)", flexShrink: 0 }}
-                    aria-label={`Select section ${n}`}
+                    aria-label={`Select section ${s.orderIndex + 1}`}
                   />
 
                   <span style={{
                     fontFamily: "var(--fd)", fontSize: "12px",
-                    color: "var(--bg4)", width: "34px",
+                    color: "var(--bg4)", width: "38px",
                     flexShrink: 0, paddingTop: "2px",
                   }}>
-                    {n}
+                    {s.orderIndex + 1}
                   </span>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {isEdit ? (
-                      <>
-                        <input
-                          value={draft.name}
-                          onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
-                          style={{ ...field, marginBottom: "8px", fontSize: "13px" }}
-                        />
-                        <textarea
-                          ref={areaRef}
-                          value={draft.content}
-                          onChange={e => setDraft(d => ({ ...d, content: e.target.value }))}
-                          rows={10}
-                          style={{
-                            ...field,
-                            fontFamily: "var(--fd)", fontSize: "15px",
-                            lineHeight: 1.8, resize: "vertical", marginBottom: "10px",
-                          }}
-                        />
-                        <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
-                          <button onClick={() => saveEdit(s.id)} disabled={busy} style={btnPrimary}>
-                            Save
-                          </button>
-                          <button onClick={() => splitAtCursor(s.id)} disabled={busy} style={btnGhost}>
-                            Split at cursor
-                          </button>
-                          <button onClick={() => setEditing(null)} style={btnGhost}>
-                            Cancel
-                          </button>
-                        </div>
-                      </>
+                      loadingText ? (
+                        <div className="skeleton" style={{ height: "180px" }} />
+                      ) : (
+                        <>
+                          <input
+                            value={draft.name}
+                            onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+                            style={{ ...field, marginBottom: "8px", fontSize: "13px" }}
+                          />
+                          <textarea
+                            value={draft.content}
+                            onChange={e => setDraft(d => ({ ...d, content: e.target.value }))}
+                            onSelect={e => setCursor((e.target as HTMLTextAreaElement).selectionStart)}
+                            onKeyUp={e => setCursor((e.target as HTMLTextAreaElement).selectionStart)}
+                            onClick={e => setCursor((e.target as HTMLTextAreaElement).selectionStart)}
+                            rows={12}
+                            style={{
+                              ...field,
+                              fontFamily: "var(--fd)", fontSize: "15px",
+                              lineHeight: 1.8, resize: "vertical", marginBottom: "10px",
+                            }}
+                          />
+                          <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", alignItems: "center" }}>
+                            <button onClick={() => saveEdit(s.id)} disabled={busy} style={btnPrimary}>
+                              Save
+                            </button>
+                            <button onClick={() => splitAtCursor(s.id)} disabled={busy} style={btnGhost}>
+                              Split at cursor
+                            </button>
+                            <button onClick={() => setEditing(null)} style={btnGhost}>
+                              Cancel
+                            </button>
+                            <span style={{ fontSize: "11px", color: "var(--bg4)" }}>
+                              {draft.content.trim().split(/\s+/).filter(Boolean).length} words
+                            </span>
+                          </div>
+                        </>
+                      )
                     ) : (
                       <>
                         <div style={{
@@ -333,12 +368,11 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
                           )}
                         </div>
                         <p style={{
-                          fontSize: "13px", color: "var(--muted)",
-                          lineHeight: 1.55,
+                          fontSize: "13px", color: "var(--muted)", lineHeight: 1.55,
                           display: "-webkit-box", WebkitLineClamp: 2,
                           WebkitBoxOrient: "vertical", overflow: "hidden",
                         }}>
-                          {s.content}
+                          {s.preview}{s.truncated && "…"}
                         </p>
                       </>
                     )}
@@ -346,11 +380,7 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
 
                   {!isEdit && (
                     <button
-                      onClick={() => {
-                        setEditing(s.id);
-                        setDraft({ name: s.name, content: s.content });
-                        setError(null);
-                      }}
+                      onClick={() => openEditor(s)}
                       style={{
                         background: "transparent", border: "none",
                         color: "var(--bg4)", cursor: "pointer",
@@ -363,7 +393,6 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
                   )}
                 </div>
 
-                {/* Trimma härifrån */}
                 {isSel && !isEdit && (
                   <div style={{
                     display: "flex", gap: "7px", marginTop: "10px",
@@ -373,7 +402,6 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
                     <button
                       onClick={() => setConfirm({
                         action: `Delete the ${s.orderIndex} sections before this one`,
-                        count:  s.orderIndex,
                         run:    () => bulk("trimBefore", { sectionId: s.id }),
                       })}
                       disabled={s.orderIndex === 0}
@@ -383,12 +411,11 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
                     </button>
                     <button
                       onClick={() => setConfirm({
-                        action: `Delete the ${sections.length - s.orderIndex - 1} sections after this one`,
-                        count:  sections.length - s.orderIndex - 1,
+                        action: `Delete the ${total - s.orderIndex - 1} sections after this one`,
                         run:    () => bulk("trimAfter", { sectionId: s.id }),
                       })}
-                      disabled={s.orderIndex === sections.length - 1}
-                      style={{ ...btnGhost, fontSize: "12px", opacity: s.orderIndex === sections.length - 1 ? 0.4 : 1 }}
+                      disabled={s.orderIndex === total - 1}
+                      style={{ ...btnGhost, fontSize: "12px", opacity: s.orderIndex === total - 1 ? 0.4 : 1 }}
                     >
                       Work ends here
                     </button>
@@ -403,18 +430,14 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
       {/* Sidor */}
       {pageCount > 1 && (
         <div style={{
-          display: "flex", justifyContent: "center",
-          alignItems: "center", gap: "12px", marginTop: "22px",
+          display: "flex", justifyContent: "center", alignItems: "center",
+          gap: "12px", marginTop: "22px",
         }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={btnGhost}>
-            ←
-          </button>
+          <button onClick={() => goto(page - 1)} disabled={page === 0} style={btnGhost}>←</button>
           <span style={{ fontSize: "12px", color: "var(--muted)" }}>
             {page + 1} / {pageCount}
           </span>
-          <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} style={btnGhost}>
-            →
-          </button>
+          <button onClick={() => goto(page + 1)} disabled={page >= pageCount - 1} style={btnGhost}>→</button>
         </div>
       )}
 
@@ -434,25 +457,18 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
             <span style={{ fontSize: "13px", color: "var(--parch2)" }}>
               {selected.size} selected
             </span>
-            <button onClick={selectAllVisible} style={btnGhost}>
-              Select all {visible.length}
+            <button onClick={() => setSelected(new Set(visible.map(s => s.id)))} style={btnGhost}>
+              Select all {visible.length} shown
             </button>
-            <button onClick={() => setSelected(new Set())} style={btnGhost}>
-              Clear
-            </button>
+            <button onClick={() => setSelected(new Set())} style={btnGhost}>Clear</button>
             <span style={{ flex: 1 }} />
             <button
               onClick={() => setConfirm({
                 action: `Delete ${selected.size} sections`,
-                count:  selected.size,
                 run:    () => bulk("deleteMany", { ids: [...selected] }),
               })}
               disabled={busy}
-              style={{
-                ...btnGhost,
-                color: "var(--red)",
-                borderColor: "rgba(192,95,114,0.4)",
-              }}
+              style={{ ...btnGhost, color: "var(--red)", borderColor: "rgba(192,95,114,0.4)" }}
             >
               Delete selected
             </button>
@@ -493,9 +509,7 @@ export function WorkEditor({ workId, title, author, sections }: Props) {
               >
                 {busy ? "…" : "Delete"}
               </button>
-              <button onClick={() => setConfirm(null)} style={btnGhost}>
-                Keep them
-              </button>
+              <button onClick={() => setConfirm(null)} style={btnGhost}>Keep them</button>
             </div>
           </div>
         </div>

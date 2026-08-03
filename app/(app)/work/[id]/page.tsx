@@ -20,8 +20,12 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
 interface Props {
-  params: Promise<{ id: string }>;
+  params:       Promise<{ id: string }>;
+  searchParams: Promise<{ sec?: string }>;
 }
+
+// Antal sektioner per sida i platta verk
+const FLAT_PAGE = 100;
 
 const MASTERED = ["mastered", "permanent"];
 
@@ -42,8 +46,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: work?.title ?? "Work" };
 }
 
-export default async function WorkPage({ params }: Props) {
+export default async function WorkPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const sp     = await searchParams;
   const user = await requireUser();
 
   const work = await prisma.work.findFirst({
@@ -298,20 +303,26 @@ export default async function WorkPage({ params }: Props) {
           </ol>
         </>
       ) : (
-        <FlatSections workId={work.id} />
+        <FlatSections workId={work.id} page={Math.max(0, (Number(sp.sec) || 1) - 1)} />
       )}
     </div>
   );
 }
 
-/** Verk utan delar — sektionerna direkt, med status och nästa repetition. */
-async function FlatSections({ workId }: { workId: string }) {
+/** Verk utan delar — sektionerna direkt, hundra åt gången. */
+async function FlatSections({ workId, page }: { workId: string; page: number }) {
+  const total = await prisma.section.count({ where: { workId, partId: null } });
+  const pageCount = Math.max(1, Math.ceil(total / FLAT_PAGE));
+  const p = Math.min(pageCount - 1, page);
+
   const sections = await prisma.section.findMany({
     where:   { workId, partId: null },
     orderBy: { orderIndex: "asc" },
+    skip:    p * FLAT_PAGE,
+    take:    FLAT_PAGE,
     select: {
       id: true, name: true, content: true,
-      status: true, nextReview: true, sm2Reps: true,
+      status: true, nextReview: true, orderIndex: true,
     },
   });
 
@@ -319,9 +330,17 @@ async function FlatSections({ workId }: { workId: string }) {
 
   return (
     <>
-      <h2 style={h2}>Sections</h2>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "14px" }}>
+        <h2 style={{ ...h2, marginBottom: 0 }}>Sections</h2>
+        {pageCount > 1 && (
+          <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+            {p * FLAT_PAGE + 1}–{Math.min((p + 1) * FLAT_PAGE, total)} of {total.toLocaleString()}
+          </span>
+        )}
+      </div>
+
       <ol style={list}>
-        {sections.map((s, i) => {
+        {sections.map(s => {
           const meta = STATUS[s.status] ?? STATUS.not_started;
           const due  = !!s.nextReview && new Date(s.nextReview) <= now;
 
@@ -333,7 +352,7 @@ async function FlatSections({ workId }: { workId: string }) {
                   border: `1px solid ${due ? "rgba(200,164,80,0.3)" : "var(--bord)"}`,
                   alignItems: "flex-start",
                 }}>
-                  <span style={{ ...numCell, paddingTop: "2px" }}>{i + 1}</span>
+                  <span style={{ ...numCell, paddingTop: "2px" }}>{s.orderIndex + 1}</span>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{
@@ -344,22 +363,16 @@ async function FlatSections({ workId }: { workId: string }) {
                       {s.content.split("\n")[0]}
                     </p>
 
-                    {/* Fyra steg till bemästrad */}
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <div style={{ display: "flex", gap: "3px" }}>
                         {[1, 2, 3, 4].map(step => (
-                          <span
-                            key={step}
-                            style={{
-                              width: "14px", height: "2px", borderRadius: "1px",
-                              background: meta.step >= step ? meta.color : "var(--bg4)",
-                            }}
-                          />
+                          <span key={step} style={{
+                            width: "14px", height: "2px", borderRadius: "1px",
+                            background: meta.step >= step ? meta.color : "var(--bg4)",
+                          }} />
                         ))}
                       </div>
-                      <span style={{ fontSize: "11px", color: meta.color }}>
-                        {meta.label}
-                      </span>
+                      <span style={{ fontSize: "11px", color: meta.color }}>{meta.label}</span>
                       {s.nextReview && !due && (
                         <span style={{ fontSize: "11px", color: "var(--muted)" }}>
                           · back in {daysUntil(s.nextReview, now)}
@@ -382,9 +395,36 @@ async function FlatSections({ workId }: { workId: string }) {
           );
         })}
       </ol>
+
+      {pageCount > 1 && (
+        <div style={{
+          display: "flex", justifyContent: "center", alignItems: "center",
+          gap: "12px", marginTop: "20px",
+        }}>
+          <Link
+            href={`/work/${workId}?sec=${p}`}
+            style={{ ...pagerLink, opacity: p === 0 ? 0.3 : 1, pointerEvents: p === 0 ? "none" : "auto" }}
+          >
+            ←
+          </Link>
+          <span style={{ fontSize: "12px", color: "var(--muted)" }}>{p + 1} / {pageCount}</span>
+          <Link
+            href={`/work/${workId}?sec=${p + 2}`}
+            style={{ ...pagerLink, opacity: p >= pageCount - 1 ? 0.3 : 1, pointerEvents: p >= pageCount - 1 ? "none" : "auto" }}
+          >
+            →
+          </Link>
+        </div>
+      )}
     </>
   );
 }
+
+const pagerLink: React.CSSProperties = {
+  padding: "7px 14px", borderRadius: "var(--r3)",
+  border: "1px solid var(--bord)", color: "var(--parch2)",
+  textDecoration: "none", fontSize: "13px",
+};
 
 function daysUntil(date: Date, now: Date): string {
   const days = Math.ceil((new Date(date).getTime() - now.getTime()) / 86_400_000);

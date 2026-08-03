@@ -2,14 +2,19 @@
 //
 // Massåtgärder på ett verks sektioner.
 //
-// Varför: en inskannad utgåva har ofta trettio sidor förord, redaktionella
-// noter och textkritik före själva verket. Att rensa det en sektion i taget
-// är inte rimligt. Här kan du säga "verket börjar här" och allt före
-// försvinner.
+// ── Rättat ────────────────────────────────────────────────────────────
+// Renumreringen körde tidigare en UPDATE per sektion i en enda
+// transaktion. I ett verk med några tusen sektioner blev det några tusen
+// frågor på en gång — den hann aldrig klart, och anropet dog.
+//
+// Nu görs det i ett enda SQL-uttryck som räknar om ordningen i databasen.
+// Samma resultat, en fråga i stället för tusentals.
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+
+export const maxDuration = 60;
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -27,11 +32,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     if (!work) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const { action, ids, sectionId } = await req.json();
-
     let removed = 0;
 
     switch (action) {
-      // ── Ta bort utvalda ─────────────────────────────────────────
       case "deleteMany": {
         if (!Array.isArray(ids) || ids.length === 0) {
           return NextResponse.json({ error: "Nothing selected" }, { status: 400 });
@@ -43,7 +46,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         break;
       }
 
-      // ── Verket börjar här — släng allt före ─────────────────────
       case "trimBefore": {
         const anchor = await prisma.section.findFirst({
           where:  { id: sectionId, workId },
@@ -59,7 +61,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         break;
       }
 
-      // ── Verket slutar här — släng allt efter ────────────────────
       case "trimAfter": {
         const anchor = await prisma.section.findFirst({
           where:  { id: sectionId, workId },
@@ -79,19 +80,22 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
 
-    // ── Städa upp efter borttagningen ───────────────────────────────
-    // Numrera om så att ordningen inte har luckor
-    const rest = await prisma.section.findMany({
-      where:   { workId },
-      orderBy: { orderIndex: "asc" },
-      select:  { id: true },
-    });
-
-    await prisma.$transaction(
-      rest.map((s, i) =>
-        prisma.section.update({ where: { id: s.id }, data: { orderIndex: i } })
+    // ── Numrera om i ett enda uttryck ───────────────────────────────
+    // ROW_NUMBER ger den nya ordningen; bara rader som faktiskt ändras
+    // skrivs, vilket gör det billigt även i stora verk.
+    await prisma.$executeRaw`
+      WITH ordered AS (
+        SELECT id,
+               (ROW_NUMBER() OVER (ORDER BY "orderIndex" ASC, "createdAt" ASC) - 1)::int AS rn
+        FROM "Section"
+        WHERE "workId" = ${workId}
       )
-    );
+      UPDATE "Section" s
+      SET "orderIndex" = o.rn
+      FROM ordered o
+      WHERE s.id = o.id
+        AND s."orderIndex" <> o.rn
+    `;
 
     // Delar som blivit tomma tjänar inget syfte
     const emptyParts = await prisma.part.findMany({
@@ -104,9 +108,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       });
     }
 
+    const remaining = await prisma.section.count({ where: { workId } });
+
     return NextResponse.json({
       removed,
-      remaining:    rest.length,
+      remaining,
       partsRemoved: emptyParts.length,
     });
   } catch (err) {
