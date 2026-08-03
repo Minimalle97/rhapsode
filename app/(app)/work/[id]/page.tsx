@@ -184,17 +184,14 @@ export default async function WorkPage({ params }: Props) {
           <span>{work.difficulty}</span>
           {dueCount > 0 && <span style={{ color: "var(--gold)" }}>{dueCount} due now</span>}
 
-          <Link href={`/work/${work.id}/recite`} style={{
-            marginLeft: "auto",
-            padding: "6px 14px",
-            borderRadius: "var(--r3)",
-            border: "1px solid var(--bord)",
-            color: "var(--parch2)",
-            textDecoration: "none",
-            fontSize: "12px",
-          }}>
-            Recite to a beat
-          </Link>
+          <span style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+            <Link href={`/work/${work.id}/edit`} style={headerBtn}>
+              Clean up
+            </Link>
+            <Link href={`/work/${work.id}/recite`} style={headerBtn}>
+              Recite to a beat
+            </Link>
+          </span>
         </div>
       </header>
 
@@ -397,6 +394,15 @@ function daysUntil(date: Date, now: Date): string {
 }
 
 // ── Stilar ───────────────────────────────────────────────────────────
+const headerBtn: React.CSSProperties = {
+  padding: "6px 14px",
+  borderRadius: "var(--r3)",
+  border: "1px solid var(--bord)",
+  color: "var(--parch2)",
+  textDecoration: "none",
+  fontSize: "12px",
+  whiteSpace: "nowrap",
+};
 const backLink: React.CSSProperties = {
   fontSize: "13px", color: "var(--muted)",
   textDecoration: "none", display: "inline-block", marginBottom: "24px",
