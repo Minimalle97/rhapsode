@@ -18,8 +18,9 @@ export async function GET() {
         orderBy: { earnedAt: "desc" },
       }),
       prisma.work.findMany({
-        where:   { userId: user.id },
-        include: { sections: true },
+        where:  { userId: user.id },
+        // Bara status — inte texten
+        select: { id: true, sections: { select: { status: true } } },
       }),
       prisma.practiceSession.findMany({
         where:   { section: { work: { userId: user.id } } },

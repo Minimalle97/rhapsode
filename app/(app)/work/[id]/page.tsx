@@ -1,5 +1,10 @@
 // app/(app)/work/[id]/page.tsx
 //
+// RÄTTAT: numreringen. Listan skrev ut sektionens plats i HELA verket
+// medan Continue-kortet skrev ut dess nummer INOM delen. Samma sektion
+// kunde alltså heta 2 på ett ställe och 47 på ett annat.
+// Nu visas sektionens namn på båda ställena.
+//
 // Visar verkets DELAR när det finns sådana, annars sektionerna direkt.
 // Sektionsräkningen görs med groupBy, så sidan är lika snabb för
 // Divina Commedia som för en sonett.
@@ -352,7 +357,7 @@ async function FlatSections({ workId, page }: { workId: string; page: number }) 
                   border: `1px solid ${due ? "rgba(200,164,80,0.3)" : "var(--bord)"}`,
                   alignItems: "flex-start",
                 }}>
-                  <span style={{ ...numCell, paddingTop: "2px" }}>{s.orderIndex + 1}</span>
+                  <span style={{ ...numCell, paddingTop: "2px" }}>{s.name}</span>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{

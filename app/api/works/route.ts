@@ -24,9 +24,22 @@ export async function GET(req: NextRequest) {
       collectionId: searchParams.get("collection")  ?? undefined,
     };
 
+    // Listan behöver status och antal, inte texten. Att skicka hela
+    // biblioteket över nätet gjorde svaret enormt i stora samlingar.
     const works = await prisma.work.findMany({
-      where:   buildWorkWhere(user.id, filters),
-      include: { sections: { orderBy: { orderIndex: "asc" } } },
+      where:  buildWorkWhere(user.id, filters),
+      select: {
+        id: true, userId: true, title: true, author: true, type: true,
+        tags: true, analysis: true, practiceAdvice: true,
+        difficulty: true, estimatedMinutes: true, createdAt: true,
+        sections: {
+          orderBy: { orderIndex: "asc" },
+          select: {
+            id: true, name: true, status: true,
+            orderIndex: true, nextReview: true, partId: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 

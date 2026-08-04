@@ -1,4 +1,6 @@
 // app/(app)/profile/page.tsx
+//
+// RÄTTAT: hämtade varje sektions fulla text bara för att räkna statusar.
 // Uppdaterad Fas 4: BackupPanel tillagd längst ned på profilsidan
 
 import { requireUser } from "@/lib/auth";
@@ -21,7 +23,8 @@ export default async function ProfilePage() {
     }),
     prisma.work.findMany({
       where:   { userId: user.id },
-      include: { sections: true },
+      // Bara status — sidan räknar bara, den läser aldrig texten
+      select: { id: true, sections: { select: { status: true } } },
     }),
   ]);
 
