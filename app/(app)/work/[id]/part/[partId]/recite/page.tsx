@@ -23,6 +23,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function RecitePartPage({ params }: Props) {
   const { id, partId } = await params;
+  if (!id || !partId) notFound();
+
   const user = await requireUser();
 
   const part = await prisma.part.findFirst({

@@ -23,6 +23,8 @@ const TYPES = [
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
     const user = await requireUser();
 
     const work = await prisma.work.findFirst({
@@ -69,6 +71,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
     const user = await requireUser();
 
     const work = await prisma.work.findFirst({

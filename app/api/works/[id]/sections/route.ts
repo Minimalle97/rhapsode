@@ -23,6 +23,8 @@ interface Ctx {
 export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     const { id: workId } = await params;
+    if (!workId) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
     const user = await requireUser();
 
     const work = await prisma.work.findFirst({

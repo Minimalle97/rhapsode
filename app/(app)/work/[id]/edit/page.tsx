@@ -37,8 +37,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function EditWorkPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const sp     = await searchParams;
-  const user   = await requireUser();
+  if (!id) notFound();
+
+  const sp   = await searchParams;
+  const user = await requireUser();
 
   const work = await prisma.work.findFirst({
     where:  { id, userId: user.id },

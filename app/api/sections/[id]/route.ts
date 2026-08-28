@@ -19,6 +19,11 @@ interface Ctx {
 }
 
 async function owned(sectionId: string, userId: string) {
+  // Utan den här raden blev ett saknat id inte ett fel utan "första bästa
+  // sektion" — Prisma läser `undefined` som "inget villkor". På DELETE hade
+  // det tagit bort fel sektion helt tyst.
+  if (!sectionId) return null;
+
   return prisma.section.findFirst({
     where:  { id: sectionId, work: { userId } },
     select: {

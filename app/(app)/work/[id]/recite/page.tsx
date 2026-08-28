@@ -30,6 +30,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ReciteWorkPage({ params }: Props) {
   const { id } = await params;
+  if (!id) notFound();
+
   const user = await requireUser();
 
   const work = await prisma.work.findFirst({

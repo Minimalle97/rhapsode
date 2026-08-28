@@ -36,6 +36,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PracticePage({ params }: Props) {
   const { id, sectionId } = await params;
+  if (!id || !sectionId) notFound();
+
+// Prisma tolkar `undefined` i ett where-villkor som "inget villkor". Ett id
+// som av någon anledning saknas gav därför inte ett fel utan FÖRSTA BÄSTA
+// rad — vilket är precis så en trasig params-hantering kunde skicka dig in i
+// ett annat verk utan att något såg fel ut. En uttrycklig vakt gör att den
+// sortens miss blir en 404 i stället för fel text.
+
   const user = await requireUser();
 
   const section = await prisma.section.findFirst({
