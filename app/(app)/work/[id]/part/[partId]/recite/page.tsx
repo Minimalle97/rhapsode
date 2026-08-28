@@ -1,7 +1,7 @@
 // app/(app)/work/[id]/part/[partId]/recite/page.tsx
 // Recitera en enskild del — en sång, en scen, en bok.
 
-import { requireUser } from "@/lib/auth";
+import { requireUser, getUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { ReciteView } from "@/components/practice/ReciteView";
@@ -14,8 +14,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { partId } = await params;
-  const part = await prisma.part.findUnique({
-    where: { id: partId }, select: { name: true },
+  const user = await getUser();
+  const part = user && await prisma.part.findFirst({
+    where: { id: partId, work: { userId: user.id } }, select: { name: true },
   });
   return { title: part ? `Recite · ${part.name}` : "Recite" };
 }

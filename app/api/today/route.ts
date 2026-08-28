@@ -48,18 +48,45 @@ export async function GET(req: NextRequest) {
 
     // Fyll på med nytt material bara om det finns utrymme
     const room = Math.max(0, freshWanted - Math.floor(dueRows.length / 4));
-    const freshRows = room > 0
-      ? await prisma.section.findMany({
-          where: {
-            work: { userId: user.id },
-            status: "not_started",
-            nextReview: null,
-          },
-          orderBy: [{ workId: "asc" }, { orderIndex: "asc" }],
-          take: room,
-          select,
-        })
-      : [];
+
+    // RÄTTAT: nytt material togs tidigare med orderBy workId — och eftersom
+    // cuid växer med tiden betydde det ALLTID det äldsta verket först. Kön
+    // fylldes med det du laddade upp först och kom aldrig vidare till resten
+    // förrän det verket var slut. Nu varvas verken runt.
+    const freshRows: typeof dueRows = [];
+    if (room > 0) {
+      const worksWithFresh = await prisma.work.findMany({
+        where: {
+          userId:   user.id,
+          sections: { some: { status: "not_started", nextReview: null } },
+        },
+        orderBy: { createdAt: "asc" },
+        select:  { id: true },
+      });
+
+      const perWork = await Promise.all(
+        worksWithFresh.map(w =>
+          prisma.section.findMany({
+            where:   { workId: w.id, status: "not_started", nextReview: null },
+            orderBy: { orderIndex: "asc" },
+            take:    room,
+            select,
+          })
+        )
+      );
+
+      // En från varje verk i tur och ordning tills kvoten är fylld
+      for (let depth = 0; freshRows.length < room; depth++) {
+        let movedThisRound = false;
+        for (const list of perWork) {
+          if (depth >= list.length) continue;
+          freshRows.push(list[depth]);
+          movedThisRound = true;
+          if (freshRows.length >= room) break;
+        }
+        if (!movedThisRound) break;
+      }
+    }
 
     const toItem = (r: (typeof dueRows)[number]): QueueItem => ({
       id:          r.id,

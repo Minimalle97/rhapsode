@@ -9,6 +9,7 @@
 import { cache } from "react";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "./db";
+import { reconcileStreak } from "./streaks";
 
 export interface SessionUser {
   id:         string;
@@ -51,6 +52,15 @@ export const requireUser = cache(async (): Promise<SessionUser> => {
       streakDays: true, lastActive: true, createdAt: true,
     },
   });
+
+  // En bruten streak upptäcktes tidigare aldrig: reconcileStreak var skriven
+  // för att köras härifrån men blev aldrig anropad, så en streak kunde ligga
+  // kvar på 14 dagar i månader utan att någon övat. Kostar noll frågor när
+  // streaken redan är 0, vilket den är i normalfallet.
+  if (user.streakDays > 0) {
+    const streakDays = await reconcileStreak(user.id, user.streakDays);
+    if (streakDays !== user.streakDays) return { ...user, streakDays };
+  }
 
   return user;
 });

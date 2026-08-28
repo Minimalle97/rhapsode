@@ -117,7 +117,11 @@ export default async function ProgressPage() {
           />
         </div>
         <div style={{ flex: "1 1 240px" }}>
-          <DailyGoalCard goal={todayGoal} streakDays={user.streakDays} />
+          <DailyGoalCard
+            completedSecs={todayGoal.completedSecs}
+            targetSecs={todayGoal.targetSecs}
+            streakDays={user.streakDays}
+          />
         </div>
       </div>
 

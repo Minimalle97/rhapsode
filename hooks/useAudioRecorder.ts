@@ -35,9 +35,15 @@ export function useAudioRecorder(): UseAudioRecorderResult {
   const chunksRef    = useRef<Blob[]>([]);
   const streamRef     = useRef<MediaStream | null>(null);
 
-  const isSupported = typeof window !== "undefined"
-    && !!navigator.mediaDevices?.getUserMedia
-    && typeof MediaRecorder !== "undefined";
+  // Måste avgöras EFTER montering. Räknades det ut under renderingen sa
+  // servern "stöds inte" och webbläsaren "stöds" i samma render, vilket gav
+  // ett hydreringsfel och en blinkning i recitationsläget.
+  const [isSupported, setIsSupported] = useState(false);
+  useEffect(() => {
+    setIsSupported(
+      !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined"
+    );
+  }, []);
 
   // Stänger av mikrofonen om komponenten avmonteras mitt i en inspelning
   // (t.ex. byter praktik-läge eller navigerar bort) — annars hänger

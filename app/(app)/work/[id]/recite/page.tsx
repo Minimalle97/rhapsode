@@ -5,7 +5,7 @@
 // tekniskt rimligt eller något någon faktiskt gör. Är verket för långt
 // pekar sidan vidare till delarna, som är den enhet man reciterar.
 
-import { requireUser } from "@/lib/auth";
+import { requireUser, getUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -21,8 +21,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const work = await prisma.work.findUnique({
-    where: { id }, select: { title: true },
+  const user = await getUser();
+  const work = user && await prisma.work.findFirst({
+    where: { id, userId: user.id }, select: { title: true },
   });
   return { title: work ? `Recite · ${work.title}` : "Recite" };
 }

@@ -41,9 +41,14 @@ export async function callClaude(
     body: JSON.stringify(body),
   });
 
-const data = await res.json();
-  console.log("Anthropic response:", JSON.stringify(data));
-  if (data.error) throw new Error(JSON.stringify(data.error));
+  const data = await res.json();
+  if (data.error) {
+    // Bara felet loggas. Att skriva ut hela svaret vid varje anrop dränkte
+    // loggen och la dessutom verkets text i klartext i serverloggen.
+    console.error("Anthropic error:", JSON.stringify(data.error));
+    throw new Error(data.error.message ?? JSON.stringify(data.error));
+  }
+  if (!res.ok) throw new Error(`Anthropic request failed (${res.status})`);
   return (
     data.content?.find((b: { type: string }) => b.type === "text")?.text ?? ""
   );

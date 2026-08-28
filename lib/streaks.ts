@@ -97,9 +97,17 @@ async function bumpStreak(userId: string, today: Date): Promise<number> {
  * för att vänta på nästa träningssession för att upptäcka en bruten streak.
  * Tidig retur om streaken redan är 0 håller kostnaden nära noll i normalfallet.
  */
-export async function reconcileStreak(userId: string): Promise<number> {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { streakDays: true } });
-  if (!user || user.streakDays === 0) return 0;
+export async function reconcileStreak(
+  userId: string,
+  knownStreak?: number
+): Promise<number> {
+  // Anroparen har oftast redan användaren i handen — då behövs ingen extra fråga.
+  const current =
+    knownStreak ??
+    (await prisma.user.findUnique({ where: { id: userId }, select: { streakDays: true } }))
+      ?.streakDays;
+
+  if (!current) return 0;
 
   const today     = startOfUTCDay(new Date());
   const yesterday = addUTCDays(today, -1);
@@ -109,7 +117,7 @@ export async function reconcileStreak(userId: string): Promise<number> {
     prisma.dailyGoal.findUnique({ where: { userId_date: { userId, date: yesterday } } }),
   ]);
 
-  if (hasToday || hasYesterday) return user.streakDays; // fortfarande vid liv
+  if (hasToday || hasYesterday) return current; // fortfarande vid liv
 
   await prisma.user.update({ where: { id: userId }, data: { streakDays: 0 } });
   return 0;

@@ -9,7 +9,7 @@
 // hundra åt gången. Hela texten hämtas först när du öppnar en sektion
 // för redigering.
 
-import { requireUser } from "@/lib/auth";
+import { requireUser, getUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { WorkEditor } from "@/components/library/WorkEditor";
@@ -28,8 +28,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const work = await prisma.work.findUnique({
-    where: { id }, select: { title: true },
+  const user = await getUser();
+  const work = user && await prisma.work.findFirst({
+    where: { id, userId: user.id }, select: { title: true },
   });
   return { title: work ? `Clean up · ${work.title}` : "Clean up" };
 }

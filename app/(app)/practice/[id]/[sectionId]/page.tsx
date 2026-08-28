@@ -12,7 +12,7 @@
 // på och oavsett vilket verk. Det var det du märkte när du tryckte på
 // session 2 och hamnade i session 1.
 
-import { requireUser } from "@/lib/auth";
+import { requireUser, getUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { PracticePanel } from "@/components/practice/PracticePanel";
@@ -24,8 +24,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sectionId } = await params;
-  const section = await prisma.section.findUnique({
-    where:  { id: sectionId },
+  const user = await getUser();
+  const section = user && await prisma.section.findFirst({
+    where:  { id: sectionId, work: { userId: user.id } },
     select: { name: true, work: { select: { title: true } } },
   });
   return {

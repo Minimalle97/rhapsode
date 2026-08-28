@@ -139,6 +139,10 @@ export async function PATCH(req: NextRequest) {
 
     const totalXpEarned = award.total + partBonus + streakBonus;
 
+    // Medalj för helt verk. Måste delas ut FÖRE saldot läses av — den ger
+    // XP den med, och tidigare rapporterades ett newXP som saknade den.
+    const medal = await checkAndAwardMedal(user.id, section.workId);
+
     // Ny rank
     const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });
     const rank        = getRank(updatedUser!.xp);
@@ -150,9 +154,6 @@ export async function PATCH(req: NextRequest) {
         data:  { rank: rank.titleEn },
       });
     }
-
-    // Medalj för helt verk
-    const medal = await checkAndAwardMedal(user.id, section.workId);
 
     return NextResponse.json({
       xpEarned: totalXpEarned,

@@ -13,7 +13,7 @@
 // "DUE" och "mastered", vilket gjorde att allt arbete däremellan såg
 // ut som ingenting alls — trots att SM-2 flyttat sektionen framåt.
 
-import { requireUser } from "@/lib/auth";
+import { requireUser, getUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -45,8 +45,11 @@ const STATUS: Record<string, { label: string; color: string; step: number }> = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const work = await prisma.work.findUnique({
-    where: { id }, select: { title: true },
+  const user = await getUser();
+  // findUnique utan ägarkoll gjorde att fliktiteln avslöjade titeln på
+  // vilket verk som helst för den som gissade ett id.
+  const work = user && await prisma.work.findFirst({
+    where: { id, userId: user.id }, select: { title: true },
   });
   return { title: work?.title ?? "Work" };
 }

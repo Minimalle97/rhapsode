@@ -101,10 +101,7 @@ export function TodayQueue() {
         if (!res.ok) throw new Error(data.error ?? "Could not save");
 
         setEarned(e => e + (data.xpEarned ?? 0));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save");
-      } finally {
-        setSending(false);
+
         setAttempt("");
         setResult(null);
 
@@ -115,6 +112,13 @@ export function TodayQueue() {
           setIndex(i => i + 1);
           setPhase("prompt");
         }
+      } catch (err) {
+        // Gick sparandet inte igenom står vi kvar på samma sektion. Att gå
+        // vidare ändå — som koden gjorde i finally — såg ut som att passet
+        // räknats, fast ingenting hade skrivits.
+        setError(err instanceof Error ? err.message : "Could not save");
+      } finally {
+        setSending(false);
       }
     },
     [current, sending, attempt, index, items.length, router]
