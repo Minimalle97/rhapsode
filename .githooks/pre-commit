@@ -1,0 +1,43 @@
+#!/bin/sh
+# .githooks/pre-commit
+#
+# Stops an API key from being committed.
+#
+# Key exposure in a repository is the leading cause of Stripe account
+# takeovers, and it is almost always an accident — a key pasted into a
+# file "just to test it" and forgotten. This is cheap insurance.
+#
+# Install once, per clone:
+#
+#   git config core.hooksPath .githooks
+#
+# Bypass deliberately with:  git commit --no-verify
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# sk_/rk_ = Stripe secret and restricted keys. whsec_ = webhook signing.
+# pk_ is publishable and safe, so it is not matched.
+pattern='(sk|rk)_(live|test)_[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{16,}|sk-ant-[A-Za-z0-9_-]{16,}'
+
+hits=""
+for file in $staged; do
+  case "$file" in
+    .env.example|*.md|.githooks/*) continue ;;
+  esac
+  [ -f "$file" ] || continue
+  if git show ":$file" 2>/dev/null | grep -Eq "$pattern"; then
+    hits="$hits  $file\n"
+  fi
+done
+
+if [ -n "$hits" ]; then
+  printf '\n  A secret appears to be staged:\n\n'
+  printf "$hits"
+  printf '\n  Remove it and use an environment variable instead.\n'
+  printf '  If a live key reached a commit, roll it now:\n'
+  printf '  https://dashboard.stripe.com/apikeys\n\n'
+  exit 1
+fi
+
+exit 0

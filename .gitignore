@@ -32,6 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but .env.example documents every variable and holds no secrets.
+# Utan den kan ingen annan sätta upp projektet — den var tidigare
+# utestängd av mönstret ovan.
+!.env.example
+
+# Stripe-skills, installerade med `npx skills add`. Vendrad dokumentation
+# som går att hämta igen; skills-lock.json är det som ska versionshanteras.
+.agents/skills/
+.claude/skills/
 
 # vercel
 .vercel

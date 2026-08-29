@@ -24,6 +24,10 @@ export function getStripe(): Stripe {
   if (!stripe) {
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) throw new Error("STRIPE_SECRET_KEY is not set");
+    // apiVersion utelämnas med flit. SDK:n använder då den version den
+    // byggdes mot (2026-08-26.dahlia i stripe@22), vilket är den senaste.
+    // Pinnar man en version här fastnar man tyst på den även efter en
+    // SDK-uppgradering, och glappet upptäcks först när något går sönder.
     stripe = new Stripe(key, { typescript: true });
   }
   return stripe;
@@ -31,6 +35,30 @@ export function getStripe(): Stripe {
 
 export function stripeConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
+}
+
+/**
+ * Etikett för kassaflödet, syns i Stripes dashboard när man jämför
+ * flöden mot varandra. Konstant med flit — ett värde per anrop skulle
+ * göra jämförelsen omöjlig. Suffixet är åtta slumpade bokstäver enligt
+ * Stripes konvention.
+ */
+const INTEGRATION_ID = "rhapsode-subscription-qkvmzrdb";
+
+/**
+ * Momsberäkning. AVSTÄNGD tills den slås på uttryckligen.
+ *
+ * Det här är den vanligaste dyra missen med Stripe Tax: `automatic_tax`
+ * går att slå på utan att något klagar, men utan en aktiv REGISTRERING i
+ * Stripe → Tax räknar Stripe fram noll moms och tar inte in någonting.
+ * Integrationen ser då korrekt ut i månader medan momsskulden växer.
+ *
+ * Rhapsode säljer till konsumenter i EU, så det här kommer att behöva
+ * slås på — men först efter att registreringen finns. Se
+ * https://docs.stripe.com/billing/taxes/collect-taxes.md
+ */
+function taxEnabled(): boolean {
+  return process.env.STRIPE_AUTOMATIC_TAX === "true";
 }
 
 /** Priset för ett intervall. Kastar hellre än att gissa. */
@@ -77,10 +105,18 @@ export async function createCheckoutSession(opts: {
 }): Promise<string> {
   const customerId = await getOrCreateCustomer(opts.user);
 
+  const withTax = taxEnabled();
+
   const session = await getStripe().checkout.sessions.create({
     mode:     "subscription",
     customer: customerId,
     line_items: [{ price: priceIdFor(opts.interval), quantity: 1 }],
+
+    // Ingen payment_method_types här. Utelämnad låter Stripe välja de
+    // metoder som faktiskt går att använda för just den kunden — i
+    // Sverige betyder det Klarna och Swish vid sidan av kort. Hårdkodar
+    // man ["card"] stänger man av dem och tappar konverteringar.
+
     // userId på BÅDA. Sessionen behövs för checkout.session.completed,
     // prenumerationen för alla senare händelser i dess livstid.
     metadata: { userId: opts.user.id },
@@ -88,7 +124,22 @@ export async function createCheckoutSession(opts: {
       metadata: { userId: opts.user.id },
       ...(opts.trialDays ? { trial_period_days: opts.trialDays } : {}),
     },
+
+    integration_identifier: INTEGRATION_ID,
     allow_promotion_codes: true,
+
+    // Moms. Adressen måste samlas in och skrivas tillbaka på kunden,
+    // annars vet Stripe inte vilket lands sats som gäller vid förnyelsen.
+    ...(withTax
+      ? {
+          automatic_tax:             { enabled: true },
+          billing_address_collection: "required" as const,
+          customer_update:           { address: "auto" as const, name: "auto" as const },
+          // Företagskunder — skolor, teatrar — ska kunna ange VAT-nummer.
+          tax_id_collection:         { enabled: true },
+        }
+      : {}),
+
     success_url: `${opts.origin}/settings/subscription?checkout=success`,
     cancel_url:  `${opts.origin}/settings/subscription?checkout=cancelled`,
   });

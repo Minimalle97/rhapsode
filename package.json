@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "verify": "tsc --noEmit && vitest run && next build",
-    "codes": "node --env-file=.env scripts/access-code.mjs"
+    "codes": "node --env-file=.env scripts/access-code.mjs",
+    "stripe:verify": "node --env-file=.env scripts/stripe-setup.mjs verify",
+    "stripe:apply": "node --env-file=.env scripts/stripe-setup.mjs apply",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.0",
