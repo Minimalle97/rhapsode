@@ -23,10 +23,27 @@ model User {
   lastActive DateTime @default(now())
   createdAt  DateTime @default(now())
 
+  // ── Prenumeration ────────────────────────────────────────────────
+  // Sanningen om vad någon får göra bor HÄR, på servern. Klienten får
+  // läsa den men aldrig sätta den.
+  plan                 String    @default("free") // free | pro
+  planSource           String    @default("none") // none | stripe | grant | developer
+  subscriptionStatus   String    @default("free") // free | trialing | active | past_due | cancelled | incomplete
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+
   works       Work[]
   medals      Medal[]
   dailyGoals  DailyGoal[]
   collections Collection[]
+
+  aiUsage       AiUsage[]
+  grants        AccessGrant[]
+  events        AnalyticsEvent[]
+  performances  Performance[]
+  studySessions StudySession[]
 
   sentRequests     Friendship[] @relation("requester")
   receivedRequests Friendship[] @relation("addressee")
@@ -63,10 +80,11 @@ model Work {
   estimatedMinutes Int      @default(15)
   createdAt        DateTime @default(now())
 
-  parts       Part[]
-  sections    Section[]
-  medals      Medal[]
-  collections CollectionWork[]
+  parts        Part[]
+  sections     Section[]
+  medals       Medal[]
+  collections  CollectionWork[]
+  performances Performance[]
 
   @@index([userId])
 }
@@ -86,17 +104,17 @@ model Part {
 }
 
 model Section {
-  id         String  @id @default(cuid())
-  workId     String
-  work       Work    @relation(fields: [workId], references: [id], onDelete: Cascade)
-  partId     String?
-  part       Part?   @relation(fields: [partId], references: [id], onDelete: Cascade)
+  id     String  @id @default(cuid())
+  workId String
+  work   Work    @relation(fields: [workId], references: [id], onDelete: Cascade)
+  partId String?
+  part   Part?   @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   name       String
   content    String
-  difficulty String  @default("medium")
-  status     String  @default("not_started")
-  orderIndex Int     @default(0)
+  difficulty String @default("medium")
+  status     String @default("not_started")
+  orderIndex Int    @default(0)
 
   sm2Reps     Int       @default(0)
   sm2EF       Float     @default(2.5)
@@ -123,6 +141,15 @@ model PracticeSession {
   durationSecs  Int      @default(0)
   recordingPath String?
   createdAt     DateTime @default(now())
+
+  // Behålls för att mästerskapsalgoritmen ska kunna förbättras i
+  // efterhand utan att gammal historik blir värdelös. Allt här räknas
+  // fram deterministiskt — ingen modell är inblandad.
+  cueLevel     String? // full | firstWord | initials | skeleton | hidden
+  wordsTotal   Int?
+  wordsCorrect Int?
+  missedWords  String[]
+  gradedBy     String   @default("deterministic") // deterministic | assisted
 
   @@index([sectionId])
   @@index([createdAt])
@@ -175,4 +202,203 @@ model CollectionWork {
   addedAt      DateTime   @default(now())
 
   @@unique([collectionId, workId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MONETISERING
+//
+// Allt nedan är additivt. Ingen befintlig kolumn har bytt namn eller
+// typ, och ingenting raderas — befintliga verk, sektioner och historik
+// är orörda.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Huvudboken över modellanrop. En rad per anrop, även träffar i cachen
+/// och blockerade försök — annars går det inte att svara på frågan
+/// "vad kostade förra månaden, och på vad".
+model AiUsage {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  feature String // se lib/ai/features.ts
+  model   String
+
+  inputTokens         Int @default(0)
+  outputTokens        Int @default(0)
+  cachedInputTokens   Int @default(0)
+  /// Mikrodollar (1_000_000 = 1 USD). Heltal — flyttal driver iväg när
+  /// man summerar hundratusen rader.
+  estimatedCostMicros Int @default(0)
+
+  requestId String?
+  cached    Boolean  @default(false)
+  status    String   @default("ok") // ok | error | blocked
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([feature, createdAt])
+  @@index([createdAt])
+}
+
+/// Atomär räknare för både månadskvot och hastighetsbegränsning.
+/// Poängen är unique([scope, key, windowStart]): ökningen sker i ETT
+/// statement med ett villkor, så tio samtidiga anrop kan inte alla läsa
+/// "4 av 5 använda" och sedan alla skriva 5.
+model UsageCounter {
+  id          String   @id @default(cuid())
+  scope       String // ai_month | ai_burst | http_burst
+  key         String // userId, eller ip för utloggade
+  windowStart DateTime
+  used        Int      @default(0)
+  expiresAt   DateTime
+  updatedAt   DateTime @updatedAt
+
+  @@unique([scope, key, windowStart])
+  @@index([expiresAt])
+}
+
+/// Delad cache för modellsvar.
+///
+/// Två personer som laddar upp samma upphovsrättsfria text och ber om
+/// samma sak ska inte kosta två anrop. Nyckeln räknas fram ur innehållet,
+/// inte ur användaren — därför kan raden delas. Personliga svar (t.ex.
+/// en studieplan byggd på din egen historik) får shared = false och en
+/// nyckel som innehåller userId.
+model AiCache {
+  id       String @id @default(cuid())
+  cacheKey String @unique
+
+  feature String
+  model   String
+  payload Json
+
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+
+  shared    Boolean   @default(true)
+  hits      Int       @default(0)
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([feature])
+  @@index([expiresAt])
+}
+
+/// En inlösbar kod som ger Pro utan betalning. Skapas från kommandoraden
+/// (scripts/access-code.mjs), aldrig från gränssnittet.
+model AccessCode {
+  id   String @id @default(cuid())
+  code String @unique
+
+  plan           String    @default("pro")
+  /// null = gäller tills den återkallas
+  durationDays   Int?
+  maxRedemptions Int       @default(1)
+  redemptions    Int       @default(0)
+  note           String?
+  expiresAt      DateTime?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  grants AccessGrant[]
+
+  @@index([active])
+}
+
+/// Resultatet av en inlöst kod, eller en manuellt utdelad behörighet.
+model AccessGrant {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  codeId String?
+  code   AccessCode? @relation(fields: [codeId], references: [id], onDelete: SetNull)
+
+  plan      String    @default("pro")
+  source    String    @default("code") // code | manual
+  note      String?
+  startsAt  DateTime  @default(now())
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, codeId])
+  @@index([userId, expiresAt])
+}
+
+/// Stripe skickar om webhooks vid minsta osäkerhet. Utan den här tabellen
+/// skulle ett omskickat event kunna räknas två gånger.
+model StripeEvent {
+  id         String   @id
+  type       String
+  receivedAt DateTime @default(now())
+
+  @@index([type, receivedAt])
+}
+
+/// Intern händelselogg. Inga personuppgifter — userId och ett namn.
+model AnalyticsEvent {
+  id     String  @id @default(cuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  name      String
+  props     Json?
+  createdAt DateTime @default(now())
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// Performance Mode. Tabellen finns redan nu så att framtida framföranden
+/// kan skrivas ned utan en ny migration mitt i en release.
+model Performance {
+  id     String  @id @default(cuid())
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workId String
+  work   Work    @relation(fields: [workId], references: [id], onDelete: Cascade)
+  partId String?
+
+  accuracy       Int // 0-100
+  hesitations    Int  @default(0)
+  missedSections Int  @default(0)
+  rhythmScore    Int?
+  longestPauseMs Int?
+  consistency    Int?
+  durationSecs   Int  @default(0)
+
+  isBest        Boolean @default(false)
+  recordingPath String?
+  detail        Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, workId, createdAt])
+  @@index([workId, isBest])
+}
+
+/// Study Mode. Planen sparas som JSON så att formen på ett studiepass kan
+/// utvecklas utan att schemat behöver ändras varje gång.
+model StudySession {
+  id     String  @id @default(cuid())
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workId String
+  partId String?
+
+  goal       String // memorise | understand | perform | language
+  language   String?
+  difficulty String   @default("normal") // gentle | normal | demanding
+  tools      String[]
+  minutes    Int      @default(15)
+
+  plan        Json?
+  status      String    @default("draft") // draft | active | completed | abandoned
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([workId])
 }

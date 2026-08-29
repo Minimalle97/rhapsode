@@ -14,6 +14,10 @@
 // och bara de fält som graferna faktiskt läser.
 
 import { requireUser } from "@/lib/auth";
+import { getEntitlements, canUseFeature } from "@/lib/billing/entitlements";
+import { FEATURE } from "@/lib/billing/plans";
+import { aiAllowance } from "@/lib/ai/run";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
 import { prisma } from "@/lib/db";
 import { getRank, getNextRank, xpToNextRank } from "@/lib/xp";
 import { getTodayGoal } from "@/lib/streaks";
@@ -39,7 +43,11 @@ const WINDOW_DAYS = 90;
 
 export default async function ProgressPage() {
   const user = await requireUser();
+  const ent  = await getEntitlements(user);
   const now  = new Date();
+
+  const advanced  = canUseFeature(ent, FEATURE.ADVANCED_PROGRESS);
+  const allowance = await aiAllowance(user.id, ent);
   const from = new Date(now.getTime() - WINDOW_DAYS * 86_400_000);
 
   const [works, sessions, todayGoal, counts] = await Promise.all([
@@ -135,12 +143,40 @@ export default async function ProgressPage() {
         <Stat label="Due now"  value={dueToday} accent={dueToday > 0} />
       </div>
 
+      {/* Kvoten som en rad text, inte en mätare. */}
+      <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "22px" }}>
+        {ent.isPro ? "Rhapsode Pro" : "Rhapsode"}
+        <span style={{ margin: "0 8px", color: "var(--bg4)" }}>·</span>
+        {allowance.remaining} of {allowance.limit} generations left this month
+      </p>
+
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        {/*
+          Free behåller det som svarar på "går det framåt": XP över tid och
+          hur sektionerna står. Det räcker för att veta om man håller på med
+          något som fungerar.
+
+          Pro lägger till det som svarar på "varför": när på dygnet det
+          fastnar, vilket verk som äter tiden, och hur träffsäkerheten rör
+          sig. Det är analys, inte framsteg — och det är rimligen den
+          skiljelinjen.
+        */}
         <XpPerDayChart data={xpPerDay} />
         <SectionStatusChart data={sectionStatus} />
-        <ReviewHeatmap data={heatmap} />
-        <TimeByWorkChart data={timeByWork} />
-        <ScoreTrendChart data={scoreTrend} />
+
+        {advanced ? (
+          <>
+            <ReviewHeatmap data={heatmap} />
+            <TimeByWorkChart data={timeByWork} />
+            <ScoreTrendChart data={scoreTrend} />
+          </>
+        ) : (
+          <UpgradeCard
+            feature="ADVANCED_PROGRESS"
+            title="See where the time actually goes"
+            body="Pro adds the review heatmap, time spent per work, and how your accuracy has moved over the last month — the three views that show which text is repaying the practice and which one is quietly stalling."
+          />
+        )}
       </div>
     </div>
   );

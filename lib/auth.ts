@@ -22,6 +22,15 @@ export interface SessionUser {
   streakDays: number;
   lastActive: Date;
   createdAt:  Date;
+
+  // Prenumerationsraden. Läses av lib/billing/entitlements.ts och av
+  // ingen annan — jämför aldrig plan direkt, fråga canUseFeature().
+  plan:               string;
+  planSource:         string;
+  subscriptionStatus: string;
+  currentPeriodEnd:   Date | null;
+  cancelAtPeriodEnd:  boolean;
+  stripeCustomerId:   string | null;
 }
 
 export const requireUser = cache(async (): Promise<SessionUser> => {
@@ -50,6 +59,8 @@ export const requireUser = cache(async (): Promise<SessionUser> => {
       id: true, clerkId: true, username: true, handle: true,
       avatarUrl: true, xp: true, rank: true,
       streakDays: true, lastActive: true, createdAt: true,
+      plan: true, planSource: true, subscriptionStatus: true,
+      currentPeriodEnd: true, cancelAtPeriodEnd: true, stripeCustomerId: true,
     },
   });
 

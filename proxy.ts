@@ -17,6 +17,10 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  // Stripe har ingen inloggning. Routen bevisar i stället vem den kommer
+  // från genom att verifiera signaturen mot STRIPE_WEBHOOK_SECRET, vilket
+  // är ett starkare bevis än en session.
+  "/api/billing/webhook",
   "/manifest.json",
   "/icon-(.*)",
   "/apple-touch-icon(.*)",

@@ -1,26 +1,34 @@
 "use client";
 // components/practice/ReciteMode.tsx
-// Fas 8: huvudfokus för fasen. Taligenkänning (transkription) och
-// MediaRecorder (uppspelningsbart ljud) körs PARALLELLT — Web Speech API
-// ger bara text, ingen ljuddata. Betygsätts mot samma /api/agents/grade
-// som WriteMode, med transkriptet som "attempt".
+// Taligenkänning (transkription) och MediaRecorder (uppspelningsbart
+// ljud) körs PARALLELLT — Web Speech API ger bara text, ingen ljuddata.
+//
+// Ändrat: rättningen går till /api/practice/grade, som jämför
+// transkriptet med originalet deterministiskt i stället för att fråga en
+// modell om ett tal. Modellen får läsa resultatet, inte sätta det — och
+// den delen är Pro.
 
 import { useState, type CSSProperties } from "react";
 import { useSpeechRecitation } from "@/hooks/useSpeechRecitation";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
-import { scoreToQuality } from "@/lib/sm2";
-import { ScoreDisplay } from "./WriteMode";
+import { ScoreDisplay, type Analysis, type GradeDetail } from "./WriteMode";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
 
 interface ReciteModeProps {
-  content:    string;
+  // Texten skickas inte längre in: servern hämtar sektionen själv när den
+  // rättar, så klienten kan inte byta ut originalet mot något lättare.
   sectionId:  string;
-  onComplete: (quality: number, score: number, recordingPath?: string) => void;
+  onComplete: (quality: number, score: number, detail: GradeDetail, recordingPath?: string) => void;
 }
 
 interface GradeResult {
   score:    number;
-  feedback: string;
-  errors:   string[];
+  quality:  number;
+  missed:   string[];
+  wordsTotal:   number;
+  wordsCorrect: number;
+  analysis:          Analysis | null;
+  analysisAvailable: boolean;
 }
 
 const LANGUAGES = [
@@ -32,7 +40,7 @@ const LANGUAGES = [
   { code: "it-IT", label: "Italian" },
 ];
 
-export function ReciteMode({ content, sectionId, onComplete }: ReciteModeProps) {
+export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
   const [lang, setLang] = useState("en-US");
   const speech = useSpeechRecitation({ lang });
   const audio  = useAudioRecorder();
@@ -64,15 +72,17 @@ export function ReciteMode({ content, sectionId, onComplete }: ReciteModeProps) 
     setGrading(true);
     setGradeError(null);
     try {
-      const res = await fetch("/api/agents/grade", {
+      // Originalet skickas inte med — servern hämtar sektionens text själv.
+      const res = await fetch("/api/practice/grade", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ original: content, attempt: speech.transcript }),
+        body:    JSON.stringify({ sectionId, attempt: speech.transcript, cueLevel: "hidden" }),
       });
-      if (!res.ok) throw new Error("Grading failed");
-      setResult(await res.json());
-    } catch {
-      setGradeError("Couldn't grade that attempt — try again.");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Grading failed");
+      setResult(data as GradeResult);
+    } catch (err) {
+      setGradeError(err instanceof Error ? err.message : "Couldn't mark that attempt — try again.");
     } finally {
       setGrading(false);
     }
@@ -98,7 +108,17 @@ export function ReciteMode({ content, sectionId, onComplete }: ReciteModeProps) 
       }
     }
 
-    onComplete(scoreToQuality(result.score), result.score, recordingPath);
+    onComplete(
+      result.quality,
+      result.score,
+      {
+        wordsTotal:   result.wordsTotal,
+        wordsCorrect: result.wordsCorrect,
+        missed:       result.missed,
+        cueLevel:     "hidden",
+      },
+      recordingPath
+    );
   }
 
   if (!speech.isSupported || !audio.isSupported) {
@@ -165,11 +185,35 @@ export function ReciteMode({ content, sectionId, onComplete }: ReciteModeProps) 
       ) : (
         <div>
           <ScoreDisplay score={result.score} />
-          <p style={feedbackStyle}>{result.feedback}</p>
-          {result.errors.length > 0 && (
-            <ul style={errorListStyle}>
-              {result.errors.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
+
+          {result.missed.length > 0 && (
+            <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "12px" }}>
+              Slipped: {result.missed.join(", ")}
+            </p>
+          )}
+
+          {result.analysis?.summary && (
+            <>
+              <p style={feedbackStyle}>{result.analysis.summary}</p>
+              {result.analysis.patterns.length > 0 && (
+                <ul style={errorListStyle}>
+                  {result.analysis.patterns.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              )}
+              {result.analysis.drill && (
+                <p style={{ ...feedbackStyle, color: "var(--parch)" }}>{result.analysis.drill}</p>
+              )}
+            </>
+          )}
+
+          {!result.analysisAvailable && (
+            <div style={{ marginBottom: "16px" }}>
+              <UpgradeCard
+                variant="compact"
+                feature="ADVANCED_RECITATION"
+                body="Pro listens past the score: which lines you hesitate on, how the rhythm holds, and what to drill next."
+              />
+            </div>
           )}
 
           {audio.audioBlob && (

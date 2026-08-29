@@ -14,14 +14,16 @@
 // verket färdigt. En count-fråga i stället för att läsa hem allt.
 
 import { prisma } from "./db";
-import { aiGenerateMedalTitle } from "./anthropic";
+import { runAi } from "./ai/run";
 import { workCompleteXP } from "./xp";
+import type { Entitlements } from "./billing/entitlements";
 
 const MASTERED = ["mastered", "permanent"];
 
 export async function checkAndAwardMedal(
   userId: string,
-  workId: string
+  workId: string,
+  ent?: Entitlements
 ): Promise<{ id: string; title: string; earnedAt: Date } | null> {
   // Finns redan en medalj är vi klara direkt — billigaste kontrollen först
   const existing = await prisma.medal.findFirst({
@@ -46,11 +48,36 @@ export async function checkAndAwardMedal(
   // Inte klart än — eller ett tomt verk, som inte förtjänar en medalj
   if (remaining > 0 || total === 0) return null;
 
-  let medalTitle: string;
-  try {
-    medalTitle = await aiGenerateMedalTitle(work.title, work.author);
-  } catch {
-    medalTitle = `Bearer of ${work.title}`;
+  // Sex ord när ett helt verk sitter. Går genom runAi() som allt annat,
+  // men räknas inte mot någons månadskvot — det är appens eget påhitt,
+  // inte något användaren bett om. Cachen delas på titel och författare,
+  // så alla som lär sig Invictus kostar ett enda anrop tillsammans.
+  let medalTitle = `Bearer of ${work.title}`;
+  if (ent) {
+    try {
+      const generated = await runAi<{ title: string }>({
+        userId,
+        ent,
+        feature: "medal_title",
+        cacheInput: { title: work.title, author: work.author },
+        build: () => ({
+          prompt:
+            `Give a four-to-six word honorific for someone who has committed ` +
+            `"${work.title}" by ${work.author} entirely to memory. Archaic, dignified, ` +
+            `classical. Examples: "Reciter of the Iliad", "Keeper of Hamlet's Words". ` +
+            `Return only the title.`,
+          maxTokens: 60,
+        }),
+        parse: raw => {
+          const title = raw.trim().replace(/^["']|["']$/g, "").slice(0, 80);
+          return title ? { title } : null;
+        },
+        fallback: () => ({ title: `Bearer of ${work.title}` }),
+      });
+      medalTitle = generated.data.title;
+    } catch {
+      // Behåll reservtiteln. En medalj ska delas ut även utan modellen.
+    }
   }
 
   // XP skalar med verkets storlek — en sonett och Odysséen är inte

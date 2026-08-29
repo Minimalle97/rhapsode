@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "verify": "tsc --noEmit && vitest run && next build",
+    "codes": "node --env-file=.env scripts/access-code.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.0",
@@ -20,6 +25,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.9.1",
+    "stripe": "^22.6.0",
     "unpdf": "^1.8.0"
   },
   "devDependencies": {
@@ -30,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }

@@ -10,6 +10,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
+import { assertWorkAllowance } from "@/lib/billing/limits";
+import { toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
 import { extractTextFromFile, cleanText, MAX_CHARS } from "@/lib/extract";
 import { segmentWork } from "@/lib/segment";
@@ -26,6 +29,13 @@ const BATCH        = 1_000;
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
+    const ent  = await getEntitlements(user);
+
+    // Taket på antal verk kontrolleras FÖRE filen läses. Att extrahera en
+    // tiomegabytes PDF och sedan säga nej vore slöseri med både tid och
+    // tålamod.
+    await assertWorkAllowance(user.id, ent);
+
     const contentType = req.headers.get("content-type") ?? "";
 
     let text        = "";
@@ -89,7 +99,13 @@ export async function POST(req: NextRequest) {
     // ── Metadata (verket skapas även om AI:n failar) ───────────────
     let meta;
     try {
-      meta = await aiWorkMetadata(text, seg.sectionCount, { title, author, filename });
+      meta = await aiWorkMetadata({
+        userId: user.id,
+        ent,
+        text,
+        sectionCount: seg.sectionCount,
+        hints: { title, author, filename },
+      });
     } catch (err) {
       console.error("Metadata lookup failed, using fallbacks:", err);
       meta = {
@@ -191,12 +207,9 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    if (msg === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Import failed:", err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // toResponse() känner igen låst funktion och slut kvot och svarar 402,
+    // vilket gränssnittet möter med en uppgraderingsruta i stället för ett fel.
+    return toResponse(err);
   }
 }
 

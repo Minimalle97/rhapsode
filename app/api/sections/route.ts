@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
 import { prisma } from "@/lib/db";
 import { sm2 } from "@/lib/sm2";
 import { calcXP, getRank, dailyBonus, XP } from "@/lib/xp";
@@ -12,9 +13,15 @@ import type { UpdateSectionPayload } from "@/types";
 
 const MASTERED = ["mastered", "permanent"];
 
+function intOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
 export async function PATCH(req: NextRequest) {
   try {
     const user = await requireUser();
+    const ent  = await getEntitlements(user);
     const { searchParams } = new URL(req.url);
     const sectionId = searchParams.get("id");
     if (!sectionId) {
@@ -23,6 +30,15 @@ export async function PATCH(req: NextRequest) {
 
     const body: UpdateSectionPayload = await req.json();
     const { quality, score, mode, durationSecs, recordingPath } = body;
+
+    // Uträknat av /api/practice/grade, inte av klienten — men det kommer
+    // via klienten, så det saneras innan det sparas.
+    const wordsTotal   = intOrNull(body.wordsTotal);
+    const wordsCorrect = intOrNull(body.wordsCorrect);
+    const cueLevel     = typeof body.cueLevel === "string" ? body.cueLevel.slice(0, 20) : null;
+    const missedWords  = Array.isArray(body.missedWords)
+      ? body.missedWords.slice(0, 24).map(w => String(w).slice(0, 40))
+      : [];
 
     if (quality == null || !mode) {
       return NextResponse.json({ error: "Missing quality or mode" }, { status: 400 });
@@ -90,6 +106,10 @@ export async function PATCH(req: NextRequest) {
           xpEarned:      award.total,
           durationSecs:  durationSecs ?? 0,
           recordingPath: recordingPath ?? null,
+          wordsTotal,
+          wordsCorrect,
+          missedWords,
+          cueLevel,
         },
       }),
       prisma.user.update({
@@ -141,7 +161,7 @@ export async function PATCH(req: NextRequest) {
 
     // Medalj för helt verk. Måste delas ut FÖRE saldot läses av — den ger
     // XP den med, och tidigare rapporterades ett newXP som saknade den.
-    const medal = await checkAndAwardMedal(user.id, section.workId);
+    const medal = await checkAndAwardMedal(user.id, section.workId, ent);
 
     // Ny rank
     const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });

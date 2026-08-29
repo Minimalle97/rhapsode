@@ -132,6 +132,14 @@ export interface UpdateSectionPayload {
   mode:           PracticeMode;
   durationSecs?:  number;
   recordingPath?: string; // Fas 8: storage-path om en inspelning sparades
+
+  // Uträknat deterministiskt av /api/practice/grade och sparat på
+  // sessionen, så att mästerskapsalgoritmen kan skärpas i efterhand utan
+  // att gammal historik blir värdelös.
+  wordsTotal?:   number;
+  wordsCorrect?: number;
+  missedWords?:  string[];
+  cueLevel?:     string;
 }
 
 export interface SM2Result {

@@ -32,13 +32,26 @@ export function usePracticeSession(prevRank: string) {
     score?:         number,
     durationSecs?:  number,
     recordingPath?: string,
+    /** Uträknat av /api/practice/grade. Sparas för mästerskapsalgoritmen. */
+    detail?: {
+      wordsTotal:   number;
+      wordsCorrect: number;
+      missed:       string[];
+      cueLevel:     string;
+    },
   ) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/sections?id=${sectionId}`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ quality, mode, score, durationSecs, recordingPath }),
+        body:    JSON.stringify({
+          quality, mode, score, durationSecs, recordingPath,
+          wordsTotal:   detail?.wordsTotal,
+          wordsCorrect: detail?.wordsCorrect,
+          missedWords:  detail?.missed,
+          cueLevel:     detail?.cueLevel,
+        }),
       });
 
       if (!res.ok) throw new Error("Session failed");

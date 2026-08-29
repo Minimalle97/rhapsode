@@ -6,6 +6,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
+import { assertWorkAllowance } from "@/lib/billing/limits";
+import { toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
 import { buildWorkWhere } from "@/lib/works";
 import type { CreateWorkPayload, LibraryFilters } from "@/types";
@@ -54,6 +57,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
+    const ent  = await getEntitlements(user);
+    await assertWorkAllowance(user.id, ent);
+
     const body: CreateWorkPayload = await req.json();
 
     const { title, author, type, tags, analysis, practiceAdvice, difficulty, estimatedMinutes, sections } = body;
@@ -87,9 +93,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(work, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    if (msg === "UNAUTHORIZED") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return toResponse(err);
   }
 }
 

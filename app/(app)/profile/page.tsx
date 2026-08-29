@@ -3,7 +3,10 @@
 // RÄTTAT: hämtade varje sektions fulla text bara för att räkna statusar.
 // Uppdaterad Fas 4: BackupPanel tillagd längst ned på profilsidan
 
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
+import { aiAllowance } from "@/lib/ai/run";
 import { prisma } from "@/lib/db";
 import { getRank, getNextRank, xpToNextRank, RANKS } from "@/lib/xp";
 import { MedalCard } from "@/components/medals/MedalCard";
@@ -14,6 +17,8 @@ import { BackupPanel } from "@/components/sync/BackupPanel";
 
 export default async function ProfilePage() {
   const user = await requireUser();
+  const ent  = await getEntitlements(user);
+  const allowance = await aiAllowance(user.id, ent);
 
   const [medals, works] = await Promise.all([
     prisma.medal.findMany({
@@ -66,6 +71,29 @@ export default async function ProfilePage() {
           </p>
         </div>
       </div>
+
+      {/*
+        Planen syns som en rad, inte som en märkning. Free ska inte känna
+        sig påmind om något den saknar varje gång den öppnar sin profil —
+        raden säger vad som gäller och var man ändrar det, och tiger sedan.
+      */}
+      <Link href="/settings/subscription" style={{ textDecoration: "none", display: "block", marginBottom: "24px" }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap",
+          background: "var(--bg2)", border: "1px solid var(--bord)",
+          borderRadius: "var(--r)", padding: "14px 18px",
+        }}>
+          <span style={{ fontFamily: "var(--fd)", fontSize: "16px", color: ent.isPro ? "var(--gold)" : "var(--parch)" }}>
+            {ent.isPro ? "Rhapsode Pro" : "Rhapsode"}
+          </span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: "12px", color: "var(--muted)" }}>
+            {ent.isPro
+              ? "Everything is open."
+              : `${allowance.remaining} of ${allowance.limit} generations left this month`}
+          </span>
+          <span style={{ fontSize: "12px", color: "var(--muted)" }}>Subscription →</span>
+        </div>
+      </Link>
 
       {/* ── Rank bar ── */}
       <div style={{ marginBottom: "24px" }}>

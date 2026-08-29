@@ -13,6 +13,7 @@
 // session 2 och hamnade i session 1.
 
 import { requireUser, getUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { PracticePanel } from "@/components/practice/PracticePanel";
@@ -45,6 +46,7 @@ export default async function PracticePage({ params }: Props) {
 // sortens miss blir en 404 i stället för fel text.
 
   const user = await requireUser();
+  const ent  = await getEntitlements(user);
 
   const section = await prisma.section.findFirst({
     where: { id: sectionId, workId: id, work: { userId: user.id } },
@@ -68,6 +70,7 @@ export default async function PracticePage({ params }: Props) {
       }
       content={section.content}
       prevRank={user.rank}
+      isPro={ent.isPro}
     />
   );
 }

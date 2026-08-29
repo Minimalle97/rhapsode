@@ -12,6 +12,8 @@ import { ReadMode } from "./ReadMode";
 import { HideMode } from "./HideMode";
 import { WriteMode } from "./WriteMode";
 import { ReciteMode } from "./ReciteMode";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
+import type { GradeDetail } from "./WriteMode";
 import type { PracticeMode } from "@/types";
 
 interface PracticePanelProps {
@@ -21,6 +23,8 @@ interface PracticePanelProps {
   sectionName: string;
   content:     string;
   prevRank:    string;
+  /** Uträknat på servern. Styr bara vad som ritas, aldrig vad som tillåts. */
+  isPro:       boolean;
 }
 
 const MODES: { value: PracticeMode; label: string }[] = [
@@ -31,12 +35,13 @@ const MODES: { value: PracticeMode; label: string }[] = [
 ];
 
 export function PracticePanel({
-  workId, workTitle, sectionId, sectionName, content, prevRank,
+  workId, workTitle, sectionId, sectionName, content, prevRank, isPro,
 }: PracticePanelProps) {
   const { submitSession, result, clearResult } = usePracticeSession(prevRank);
   const [mode, setMode]           = useState<PracticeMode>("read");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted]   = useState(false);
+  const [lastDetail, setLastDetail] = useState<GradeDetail | null>(null);
 
   // Tiden räknas från senaste lägesbytet, inte från sidladdning — annars
   // skulle den som provar Read, ångrar sig och byter till Write få en
@@ -49,10 +54,18 @@ export function PracticePanel({
     return Math.max(1, Math.round((Date.now() - startRef.current) / 1000));
   }
 
-  async function handleComplete(quality: number, score?: number, recordingPath?: string) {
+  async function handleComplete(
+    quality: number,
+    score?: number,
+    detail?: GradeDetail,
+    recordingPath?: string
+  ) {
     setSubmitting(true);
     try {
-      await submitSession(sectionId, quality, mode, score, elapsedSecs(), recordingPath);
+      await submitSession(
+        sectionId, quality, mode, score, elapsedSecs(), recordingPath, detail
+      );
+      if (detail) setLastDetail(detail);
       setSubmitted(true);
     } finally {
       setSubmitting(false);
@@ -88,13 +101,15 @@ export function PracticePanel({
               <HideMode content={content} onComplete={(q) => handleComplete(q)} />
             )}
             {mode === "write" && (
-              <WriteMode content={content} onComplete={(q, s) => handleComplete(q, s)} />
+              <WriteMode
+                sectionId={sectionId}
+                onComplete={(q, s, d) => handleComplete(q, s, d)}
+              />
             )}
             {mode === "recite" && (
               <ReciteMode
-                content={content}
                 sectionId={sectionId}
-                onComplete={(q, s, p) => handleComplete(q, s, p)}
+                onComplete={(q, s, d, p) => handleComplete(q, s, d, p)}
               />
             )}
           </div>
@@ -102,9 +117,40 @@ export function PracticePanel({
       ) : (
         <div style={doneStyle}>
           <p style={doneTextStyle}>Saved. Well practiced.</p>
+
+          {lastDetail && lastDetail.wordsTotal > 0 && (
+            <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "20px" }}>
+              {lastDetail.wordsCorrect} of {lastDetail.wordsTotal} words held.
+            </p>
+          )}
+
           <Link href={`/work/${workId}`} style={continueLinkStyle}>
             Back to {workTitle}
           </Link>
+
+          {/*
+            Erbjudandet kommer HÄR och ingen annanstans: efter att arbetet
+            är gjort, med en siffra att peka på. Aldrig före — den som inte
+            hunnit recitera en gång har ingenting att värdera erbjudandet
+            mot, och att fråga då är bara att stå i vägen.
+          */}
+          {!isPro && lastDetail && lastDetail.missed.length >= 2 && (
+            <div style={{ marginTop: "34px", textAlign: "left" }}>
+              <UpgradeCard
+                feature="PERSONALIZED_STUDY"
+                title="Train the lines you keep losing"
+                body={
+                  <>
+                    You slipped on {lastDetail.missed.slice(0, 3).join(", ")}
+                    {lastDetail.missed.length > 3 ? " and others" : ""}. Rhapsode Pro
+                    can turn exactly those lines into a targeted session — the passage
+                    broken down, the words drilled, and the rhythm checked against how
+                    you actually said it.
+                  </>
+                }
+              />
+            </div>
+          )}
         </div>
       )}
 

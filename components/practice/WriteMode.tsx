@@ -1,24 +1,53 @@
 "use client";
 // components/practice/WriteMode.tsx
-// Fas 8: skriv sektionen ur minnet, betygsätt mot originalet via samma
-// /api/agents/grade-endpoint som redan fanns (skrivet i Fas 1, aldrig
-// anropat förrän nu).
+// Skriv sektionen ur minnet och få den rättad.
+//
+// Ändrat: rättningen gick tidigare till en språkmodell för att få ett tal
+// mellan noll och hundra tillbaka. Nu görs jämförelsen på servern med
+// Levenshtein på ordnivå — samma svar varje gång, på en millisekund, utan
+// kostnad. Det är också det enda sättet att göra mästerskapsnivån
+// reproducerbar.
+//
+// Originalet skickas INTE med i anropet. Servern hämtar texten själv ur
+// sektionen; annars hade en klient kunnat skicka in en lättare text att
+// jämföras mot.
+//
+// Läsningen ovanpå siffran — vad som gled och vad man gör åt det — är det
+// som ligger i Pro, och den kommer med i samma svar när man har den.
 
 import { useState, type CSSProperties } from "react";
-import { scoreToQuality } from "@/lib/sm2";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
 
 interface WriteModeProps {
-  content:    string;
-  onComplete: (quality: number, score: number) => void;
+  sectionId:  string;
+  onComplete: (quality: number, score: number, detail: GradeDetail) => void;
+}
+
+export interface Analysis {
+  summary:  string;
+  patterns: string[];
+  drill:    string;
+}
+
+export interface GradeDetail {
+  wordsTotal:   number;
+  wordsCorrect: number;
+  missed:       string[];
+  cueLevel:     string;
 }
 
 interface GradeResult {
   score:    number;
-  feedback: string;
-  errors:   string[];
+  quality:  number;
+  missed:   string[];
+  diff:     { word: string; correct: boolean }[];
+  wordsTotal:   number;
+  wordsCorrect: number;
+  analysis:          Analysis | null;
+  analysisAvailable: boolean;
 }
 
-export function WriteMode({ content, onComplete }: WriteModeProps) {
+export function WriteMode({ sectionId, onComplete }: WriteModeProps) {
   const [attempt, setAttempt] = useState("");
   const [grading, setGrading] = useState(false);
   const [result, setResult]   = useState<GradeResult | null>(null);
@@ -29,16 +58,16 @@ export function WriteMode({ content, onComplete }: WriteModeProps) {
     setGrading(true);
     setError(null);
     try {
-      const res = await fetch("/api/agents/grade", {
+      const res = await fetch("/api/practice/grade", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ original: content, attempt }),
+        body:    JSON.stringify({ sectionId, attempt, cueLevel: "hidden" }),
       });
-      if (!res.ok) throw new Error("Grading failed");
-      const data: GradeResult = await res.json();
-      setResult(data);
-    } catch {
-      setError("Couldn't grade that attempt — try again.");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not mark that");
+      setResult(data as GradeResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not mark that attempt.");
     } finally {
       setGrading(false);
     }
@@ -48,13 +77,67 @@ export function WriteMode({ content, onComplete }: WriteModeProps) {
     return (
       <div>
         <ScoreDisplay score={result.score} />
-        <p style={feedbackStyle}>{result.feedback}</p>
-        {result.errors.length > 0 && (
-          <ul style={errorListStyle}>
-            {result.errors.map((e, i) => <li key={i}>{e}</li>)}
-          </ul>
+
+        {/* Diffen är gratis och säger mest av allt: exakt vilka ord som gled. */}
+        <p style={diffStyle}>
+          {result.diff.map((d, i) => (
+            <span
+              key={i}
+              style={{
+                color: d.correct ? "var(--parch2)" : "var(--red)",
+                borderBottom: d.correct ? "none" : "1px solid var(--red)",
+              }}
+            >
+              {d.word}{" "}
+            </span>
+          ))}
+        </p>
+
+        {result.missed.length > 0 && (
+          <p style={mutedLine}>Slipped: {result.missed.join(", ")}</p>
         )}
-        <button onClick={() => onComplete(scoreToQuality(result.score), result.score)} style={continueBtnStyle}>
+
+        {result.analysis?.summary && (
+          <div style={analysisBox}>
+            <p style={analysisText}>{result.analysis.summary}</p>
+            {result.analysis.patterns.length > 0 && (
+              <ul style={{ listStyle: "none", marginTop: "10px", display: "flex", flexDirection: "column", gap: "5px" }}>
+                {result.analysis.patterns.map((p, i) => (
+                  <li key={i} style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.55 }}>
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {result.analysis.drill && (
+              <p style={{ ...analysisText, marginTop: "12px", color: "var(--parch)" }}>
+                {result.analysis.drill}
+              </p>
+            )}
+          </div>
+        )}
+
+        {!result.analysisAvailable && result.missed.length > 0 && (
+          <div style={{ marginTop: "18px" }}>
+            <UpgradeCard
+              variant="compact"
+              feature="ADVANCED_RECITATION"
+              body={`You lost ${result.missed.length} ${result.missed.length === 1 ? "word" : "words"}. Pro reads the pattern behind that and builds a drill for it.`}
+            />
+          </div>
+        )}
+
+        <button
+          onClick={() =>
+            onComplete(result.quality, result.score, {
+              wordsTotal:   result.wordsTotal,
+              wordsCorrect: result.wordsCorrect,
+              missed:       result.missed,
+              cueLevel:     "hidden",
+            })
+          }
+          style={continueBtnStyle}
+        >
           Continue
         </button>
       </div>
@@ -65,14 +148,14 @@ export function WriteMode({ content, onComplete }: WriteModeProps) {
     <div>
       <textarea
         value={attempt}
-        onChange={(e) => setAttempt(e.target.value)}
+        onChange={e => setAttempt(e.target.value)}
         placeholder="Write the section from memory…"
         style={textareaStyle}
         disabled={grading}
       />
       {error && <p style={{ fontSize: "12px", color: "var(--red)", marginTop: "8px" }}>{error}</p>}
       <button onClick={handleGrade} disabled={grading || !attempt.trim()} style={gradeBtnStyle}>
-        {grading ? "Grading…" : "Check my attempt"}
+        {grading ? "Marking…" : "Check my attempt"}
       </button>
     </div>
   );
@@ -103,6 +186,34 @@ const textareaStyle: CSSProperties = {
   resize:       "vertical",
 };
 
+const diffStyle: CSSProperties = {
+  fontFamily:  "var(--fd)",
+  fontSize:    "16px",
+  lineHeight:  1.85,
+  whiteSpace:  "pre-wrap",
+  marginBottom: "12px",
+};
+
+const mutedLine: CSSProperties = {
+  fontSize:     "12px",
+  color:        "var(--muted)",
+  marginBottom: "4px",
+};
+
+const analysisBox: CSSProperties = {
+  marginTop:    "16px",
+  padding:      "16px 18px",
+  background:   "var(--bg3)",
+  border:       "1px solid var(--bord)",
+  borderRadius: "var(--r2)",
+};
+
+const analysisText: CSSProperties = {
+  fontSize:   "13.5px",
+  lineHeight: 1.7,
+  color:      "var(--parch2)",
+};
+
 const gradeBtnStyle: CSSProperties = {
   marginTop:    "14px",
   padding:      "11px 24px",
@@ -115,22 +226,8 @@ const gradeBtnStyle: CSSProperties = {
   cursor:       "pointer",
 };
 
-const feedbackStyle: CSSProperties = {
-  fontSize:     "14px",
-  lineHeight:   1.6,
-  color:        "var(--parch2)",
-  marginBottom: "12px",
-};
-
-const errorListStyle: CSSProperties = {
-  fontSize:     "13px",
-  color:        "var(--muted)",
-  lineHeight:   1.7,
-  marginBottom: "20px",
-  paddingLeft:  "18px",
-};
-
 const continueBtnStyle: CSSProperties = {
+  marginTop:    "20px",
   padding:      "11px 24px",
   borderRadius: "var(--r2)",
   border:       "1px solid var(--gold)",
