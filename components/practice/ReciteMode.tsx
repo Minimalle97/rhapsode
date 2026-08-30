@@ -7,6 +7,18 @@
 // transkriptet med originalet deterministiskt i stället för att fråga en
 // modell om ett tal. Modellen får läsa resultatet, inte sätta det — och
 // den delen är Pro.
+//
+// INSPELNINGEN LÄMNAR ALDRIG ENHETEN.
+//
+// Tidigare laddades ljudet upp till Supabase Storage om en ruta var
+// ikryssad, och rutan var förkryssad. En röstinspelning är biometriska
+// personuppgifter; att samla dem som standard, för en funktion som inte
+// behöver dem, är fel sorts insamling.
+//
+// Nu finns ingen uppladdning alls — routen som tog emot den är borttagen
+// och kolumnen som höll sökvägen finns inte kvar i databasen. Man kan
+// spara filen till sin egen enhet, eller låta den försvinna. Det är hela
+// urvalet, och ingen av vägarna går via en server.
 
 import { useState, type CSSProperties } from "react";
 import { useSpeechRecitation } from "@/hooks/useSpeechRecitation";
@@ -18,7 +30,7 @@ interface ReciteModeProps {
   // Texten skickas inte längre in: servern hämtar sektionen själv när den
   // rättar, så klienten kan inte byta ut originalet mot något lättare.
   sectionId:  string;
-  onComplete: (quality: number, score: number, detail: GradeDetail, recordingPath?: string) => void;
+  onComplete: (quality: number, score: number, detail: GradeDetail) => void;
 }
 
 interface GradeResult {
@@ -45,10 +57,9 @@ export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
   const speech = useSpeechRecitation({ lang });
   const audio  = useAudioRecorder();
 
-  const [saveRecording, setSaveRecording] = useState(true);
+  const [downloaded, setDownloaded] = useState(false);
   const [result, setResult]         = useState<GradeResult | null>(null);
   const [grading, setGrading]       = useState(false);
-  const [uploading, setUploading]   = useState(false);
   const [gradeError, setGradeError] = useState<string | null>(null);
 
   const hasAttempt  = speech.transcript.trim().length > 0;
@@ -88,37 +99,45 @@ export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
     }
   }
 
-  async function handleContinue() {
+  /**
+   * Sparar inspelningen till anvandarens egen enhet.
+   *
+   * Blobben ligger redan i minnet. En object-URL och ett klick pa en
+   * dold lank racker — filen gar aldrig via nagon server, och det finns
+   * ingen endpoint som skulle kunna ta emot den.
+   */
+  function download() {
+    if (!audio.audioBlob) return;
+
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    const ext   = audio.audioBlob.type.includes("mp4") ? "m4a" : "webm";
+    const url   = URL.createObjectURL(audio.audioBlob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rhapsode-recitation-${stamp}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    // Slapp object-URL:en igen sa att blobben kan stadas bort.
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    setDownloaded(true);
+  }
+
+  function handleContinue() {
     if (!result) return;
 
-    let recordingPath: string | undefined;
-    if (saveRecording && audio.audioBlob) {
-      setUploading(true);
-      try {
-        const formData = new FormData();
-        formData.append("file", audio.audioBlob, "recitation.webm");
-        formData.append("sectionId", sectionId);
-        const res = await fetch("/api/recordings", { method: "POST", body: formData });
-        if (res.ok) {
-          const data = await res.json();
-          recordingPath = data.path;
-        }
-      } finally {
-        setUploading(false);
-      }
-    }
+    // Sista referensen till ljudet slapps har. Inget skickades nagonsin,
+    // och nu finns det inte kvar i minnet heller.
+    audio.reset();
 
-    onComplete(
-      result.quality,
-      result.score,
-      {
-        wordsTotal:   result.wordsTotal,
-        wordsCorrect: result.wordsCorrect,
-        missed:       result.missed,
-        cueLevel:     "hidden",
-      },
-      recordingPath
-    );
+    onComplete(result.quality, result.score, {
+      wordsTotal:   result.wordsTotal,
+      wordsCorrect: result.wordsCorrect,
+      missed:       result.missed,
+      cueLevel:     "hidden",
+    });
   }
 
   if (!speech.isSupported || !audio.isSupported) {
@@ -217,18 +236,21 @@ export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
           )}
 
           {audio.audioBlob && (
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={saveRecording}
-                onChange={(e) => setSaveRecording(e.target.checked)}
-              />
-              Save this recording for later playback
-            </label>
+            <div style={recordingChoiceStyle}>
+              <p style={{ fontSize: "12.5px", color: "var(--parch2)", lineHeight: 1.6 }}>
+                Your recording stayed on this device. Keep a copy if you want
+                one — otherwise it goes when you continue.
+              </p>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+                <button onClick={download} style={downloadBtnStyle}>
+                  {downloaded ? "Saved to your device" : "Download the recording"}
+                </button>
+              </div>
+            </div>
           )}
 
-          <button onClick={handleContinue} disabled={uploading} style={continueBtnStyle}>
-            {uploading ? "Saving…" : "Continue"}
+          <button onClick={handleContinue} style={continueBtnStyle}>
+            {audio.audioBlob ? "Continue and discard the recording" : "Continue"}
           </button>
         </div>
       )}
@@ -345,13 +367,22 @@ const errorListStyle: CSSProperties = {
   paddingLeft:  "18px",
 };
 
-const checkboxLabelStyle: CSSProperties = {
-  display:      "flex",
-  alignItems:   "center",
-  gap:          "8px",
-  fontSize:     "13px",
-  color:        "var(--parch2)",
+const recordingChoiceStyle: CSSProperties = {
+  background:   "var(--bg3)",
+  border:       "1px solid var(--bord)",
+  borderRadius: "var(--r2)",
+  padding:      "14px 16px",
   marginBottom: "18px",
+};
+
+const downloadBtnStyle: CSSProperties = {
+  padding:      "8px 16px",
+  borderRadius: "var(--r3)",
+  border:       "1px solid var(--bord)",
+  background:   "transparent",
+  color:        "var(--parch2)",
+  fontSize:     "12.5px",
+  fontFamily:   "var(--fb)",
   cursor:       "pointer",
 };
 

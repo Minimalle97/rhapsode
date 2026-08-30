@@ -139,7 +139,6 @@ model PracticeSession {
   mode          String
   xpEarned      Int      @default(0)
   durationSecs  Int      @default(0)
-  recordingPath String?
   createdAt     DateTime @default(now())
 
   // Behålls för att mästerskapsalgoritmen ska kunna förbättras i
@@ -370,7 +369,6 @@ model Performance {
   durationSecs   Int  @default(0)
 
   isBest        Boolean @default(false)
-  recordingPath String?
   detail        Json?
 
   createdAt DateTime @default(now())

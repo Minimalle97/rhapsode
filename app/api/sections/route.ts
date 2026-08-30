@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body: UpdateSectionPayload = await req.json();
-    const { quality, score, mode, durationSecs, recordingPath } = body;
+    const { quality, score, mode, durationSecs } = body;
 
     // Uträknat av /api/practice/grade, inte av klienten — men det kommer
     // via klienten, så det saneras innan det sparas.
@@ -105,7 +105,6 @@ export async function PATCH(req: NextRequest) {
           mode,
           xpEarned:      award.total,
           durationSecs:  durationSecs ?? 0,
-          recordingPath: recordingPath ?? null,
           wordsTotal,
           wordsCorrect,
           missedWords,

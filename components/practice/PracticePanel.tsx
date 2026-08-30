@@ -57,13 +57,12 @@ export function PracticePanel({
   async function handleComplete(
     quality: number,
     score?: number,
-    detail?: GradeDetail,
-    recordingPath?: string
+    detail?: GradeDetail
   ) {
     setSubmitting(true);
     try {
       await submitSession(
-        sectionId, quality, mode, score, elapsedSecs(), recordingPath, detail
+        sectionId, quality, mode, score, elapsedSecs(), detail
       );
       if (detail) setLastDetail(detail);
       setSubmitted(true);
@@ -109,7 +108,7 @@ export function PracticePanel({
             {mode === "recite" && (
               <ReciteMode
                 sectionId={sectionId}
-                onComplete={(q, s, d, p) => handleComplete(q, s, d, p)}
+                onComplete={(q, s, d) => handleComplete(q, s, d)}
               />
             )}
           </div>

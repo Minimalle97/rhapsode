@@ -1,6 +1,9 @@
 // types/index.ts
-// Fas 8: PracticeMode += "recite"; recordingPath på PracticeSession +
-// UpdateSectionPayload. Inga andra ändringar i befintliga typer.
+//
+// PracticeSession bär inte längre någon sökväg till en inspelning.
+// Ljudet från recitationsläget stannar i webbläsaren: man kan lyssna på
+// det och spara det till sin egen enhet, men det skickas ingenstans och
+// det finns ingen kolumn kvar att peka ut var det hamnade.
 
 export type WorkType =
   | "POEM" | "EPIC" | "PLAY" | "SPEECH"
@@ -61,7 +64,6 @@ export interface PracticeSession {
   mode:          PracticeMode;
   xpEarned:      number;
   durationSecs:  number;
-  recordingPath: string | null;
   createdAt:     Date;
 }
 
@@ -131,7 +133,6 @@ export interface UpdateSectionPayload {
   score?:         number;
   mode:           PracticeMode;
   durationSecs?:  number;
-  recordingPath?: string; // Fas 8: storage-path om en inspelning sparades
 
   // Uträknat deterministiskt av /api/practice/grade och sparat på
   // sessionen, så att mästerskapsalgoritmen kan skärpas i efterhand utan

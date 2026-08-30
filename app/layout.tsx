@@ -28,18 +28,38 @@ export const viewport: Viewport = {
 };
 
 // Clerk-tema — speglar CSS-variablerna i globals.css
+//
+// RÄTTAT: variablerna hette fel och ignorerades därför tyst.
+//
+// Clerk 7 döpte om dem: colorText → colorForeground, colorTextSecondary →
+// colorMutedForeground, colorInputBackground → colorInput och
+// colorInputText → colorInputForeground. Ett okänt namn ger varken fel
+// eller varning, det faller bara tillbaka på standardvärdet — och
+// standardvärdet för colorInputForeground är bokstavligen "black".
+//
+// Följden var att man skrev svart text på nästan svart botten när man
+// registrerade sig. Det gick inte att se vad man skrev.
 const clerkAppearance = {
   variables: {
-    colorPrimary:        "#C8A450",
-    colorBackground:     "#13181F",
-    colorText:           "#EDE5CC",
-    colorTextSecondary:  "#7A8899",
-    colorInputBackground:"#1A2029",
-    colorInputText:      "#EDE5CC",
-    colorDanger:         "#C05F72",
-    colorSuccess:        "#6A9E6A",
-    borderRadius:        "10px",
-    fontFamily:          "'Inter', system-ui, sans-serif",
+    colorPrimary:           "#C8A450",
+    colorPrimaryForeground: "#0C1015",
+    colorBackground:        "#13181F",
+    colorForeground:        "#EDE5CC",
+    colorMuted:             "#1A2029",
+    colorMutedForeground:   "#7A8899",
+    colorInput:             "#1A2029",
+    colorInputForeground:   "#EDE5CC",
+    // Basen Clerk härleder sina neutrala toner ur. Standard är "black",
+    // vilket ger osynliga kanter och otydlig text på mörk botten.
+    colorNeutral:           "#EDE5CC",
+    colorBorder:            "rgba(200,164,80,0.22)",
+    colorRing:              "#C8A450",
+    colorShadow:            "#000000",
+    colorDanger:            "#C05F72",
+    colorSuccess:           "#6A9E6A",
+    colorWarning:           "#C9A227",
+    borderRadius:           "10px",
+    fontFamily:             "'Inter', system-ui, sans-serif",
   },
   elements: {
     rootBox: { width: "100%" },

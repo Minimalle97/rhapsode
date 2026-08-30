@@ -1,7 +1,9 @@
 "use client";
 // hooks/usePracticeSession.ts
-// Fas 8: submitSession tar nu även emot recordingPath (valfri) — och får,
-// för första gången sedan Fas 1, en faktisk anropare: PracticePanel.
+// submitSession skickar resultatet av ett övningspass.
+//
+// Den tar INTE emot någon inspelning, och kan inte göra det. Ljudet från
+// recitationsläget lämnar aldrig webbläsaren.
 
 import { useState, useCallback } from "react";
 import type { PracticeMode } from "@/types";
@@ -31,7 +33,6 @@ export function usePracticeSession(prevRank: string) {
     mode:           PracticeMode,
     score?:         number,
     durationSecs?:  number,
-    recordingPath?: string,
     /** Uträknat av /api/practice/grade. Sparas för mästerskapsalgoritmen. */
     detail?: {
       wordsTotal:   number;
@@ -46,7 +47,7 @@ export function usePracticeSession(prevRank: string) {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
-          quality, mode, score, durationSecs, recordingPath,
+          quality, mode, score, durationSecs,
           wordsTotal:   detail?.wordsTotal,
           wordsCorrect: detail?.wordsCorrect,
           missedWords:  detail?.missed,

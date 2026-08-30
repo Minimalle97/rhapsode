@@ -13,7 +13,9 @@
 //    Nu hämtas bara status per sektion, vilket är allt som räknas.
 
 import { Suspense } from "react";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
 import { prisma } from "@/lib/db";
 import { buildWorkWhere, getDistinctTags, hasActiveFilters } from "@/lib/works";
 import { WorkCard } from "@/components/library/WorkCard";
@@ -33,6 +35,7 @@ function str(v: string | string[] | undefined): string | undefined {
 export default async function LibraryPage({ searchParams }: Props) {
   const sp   = await searchParams;
   const user = await requireUser();
+  const ent  = await getEntitlements(user);
 
   const filters: LibraryFilters = {
     q:            str(sp.q),
@@ -128,6 +131,26 @@ export default async function LibraryPage({ searchParams }: Props) {
             />
           ))}
         </div>
+      )}
+
+      {/*
+        Vägen in till Pro för den som letar efter den.
+        
+        Resten av erbjudandena är avsiktligt kontextuella — de dyker upp
+        när man stött på en gräns, inte innan. Men någon som redan bestämt
+        sig ska inte behöva leta i profilen efter var man betalar. En rad
+        längst ned, bara för den som inte redan har Pro.
+      */}
+      {!ent.isPro && hasAnyWorks && (
+        <p style={{ marginTop: "40px", paddingTop: "22px", borderTop: "1px solid var(--bord)" }}>
+          <Link href="/settings/subscription" style={{
+            fontSize: "13px", color: "var(--muted)", textDecoration: "none",
+          }}>
+            <span style={{ color: "var(--gold)" }}>Rhapsode Pro</span>
+            {" — unlimited works, closer analysis of what your recitation missed, "}
+            {"and study sessions built around the lines you keep losing."}
+          </Link>
+        </p>
       )}
     </div>
   );
