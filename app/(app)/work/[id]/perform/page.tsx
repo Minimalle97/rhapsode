@@ -12,6 +12,7 @@ import Link from "next/link";
 import { PerformanceMode } from "@/components/practice/PerformanceMode";
 import { standingForWork } from "@/lib/performanceStore";
 import { fitsOneSitting, RULES } from "@/lib/performance";
+import { getEntitlements } from "@/lib/billing/entitlements";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export default async function PerformPage({ params, searchParams }: Props) {
   });
   if (!work) notFound();
 
+  const ent = await getEntitlements(user);
   const partId = sp.part ?? null;
 
   const [total, standing] = await Promise.all([
@@ -116,6 +118,7 @@ export default async function PerformPage({ params, searchParams }: Props) {
         sectionCount={total}
         standing={standing}
         passAccuracy={RULES.passAccuracy}
+        isPro={ent.isPro}
       />
     </div>
   );

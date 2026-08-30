@@ -56,6 +56,35 @@ export default async function AppLayout({
 
         <NavTabs />
 
+        {/*
+          Utvecklarmarkoren. Finns for att svara pa en enda fraga utan att
+          man behover leta i loggar: las servern RHAPSODE_DEVELOPER_USER_IDS,
+          och kande den igen just det har kontot?
+
+          Syns bara for den som faktiskt star i variabeln. En vanlig
+          anvandare ser aldrig detta, och en Pro-prenumerant heller inte —
+          det ar inte en niva, det ar en flagga.
+        */}
+        {ent.source === "developer" && (
+          <span
+            title="RHAPSODE_DEVELOPER_USER_IDS matched this account. Pro is on, unbilled."
+            style={{
+              fontFamily:    "var(--fd)",
+              fontSize:      "11px",
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color:         "var(--blue)",
+              border:        "1px solid rgba(91,139,181,0.4)",
+              borderRadius:  "var(--r3)",
+              padding:       "3px 8px",
+              marginLeft:    "8px",
+              whiteSpace:    "nowrap",
+            }}
+          >
+            Dev
+          </span>
+        )}
+
         <div style={{ marginLeft: "6px", display: "flex", alignItems: "center" }}>
           <UserButton />
         </div>

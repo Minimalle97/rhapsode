@@ -5,7 +5,9 @@
 
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getEntitlements } from "@/lib/billing/entitlements";
+import { getEntitlements, canUseFeature } from "@/lib/billing/entitlements";
+import { FEATURE } from "@/lib/billing/plans";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
 import { aiAllowance } from "@/lib/ai/run";
 import { prisma } from "@/lib/db";
 import { getRank, getNextRank, xpToNextRank, RANKS } from "@/lib/xp";
@@ -137,15 +139,30 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      {/* ── Stats ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "36px" }}>
-        <StatTile label="Works"    value={works.length} />
-        <StatTile label="Sections" value={totalSections} />
-        <StatTile label="Mastered" value={masteredSections} accent />
-        <StatTile label="Learning" value={learningNow} />
-        <StatTile label="Medals"   value={medals.length} accent />
-        <StatTile label="Streak"   value={user.streakDays} suffix="days" />
-      </div>
+      {/*
+        Statistiken ligger bakom Pro. Rangen, medaljerna och streaken star
+        kvar ovanfor — det ar vad man ASTADKOMMIT, och det tas inte ifran
+        nagon. Det som ar last ar uppstallningen som later en lasa sin egen
+        utveckling, och den ar analys snarare an framsteg.
+      */}
+      {canUseFeature(ent, FEATURE.ADVANCED_PROGRESS) ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "36px" }}>
+          <StatTile label="Works"    value={works.length} />
+          <StatTile label="Sections" value={totalSections} />
+          <StatTile label="Mastered" value={masteredSections} accent />
+          <StatTile label="Learning" value={learningNow} />
+          <StatTile label="Medals"   value={medals.length} accent />
+          <StatTile label="Streak"   value={user.streakDays} suffix="days" />
+        </div>
+      ) : (
+        <div style={{ marginBottom: "36px" }}>
+          <UpgradeCard
+            feature="ADVANCED_PROGRESS"
+            title="Read your own progress"
+            body="How many sections are holding, how many are still moving, how the streak has run, and what the whole library adds up to. Pro keeps the ledger so you can see whether the practice is working, not just that you did it."
+          />
+        </div>
+      )}
 
       {/* ── Medals ── */}
       <div style={{ marginBottom: "12px", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>

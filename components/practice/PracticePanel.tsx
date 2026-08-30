@@ -48,6 +48,9 @@ export function PracticePanel({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted]   = useState(false);
   const [lastDetail, setLastDetail] = useState<GradeDetail | null>(null);
+  // Byts for att tvinga fram en ny monterering av lagena nar man kor om
+  // samma sektion. Utan den ligger forra forsokets text kvar i rutan.
+  const [attemptKey, setAttemptKey] = useState(0);
 
   // Tiden räknas från senaste lägesbytet, inte från sidladdning — annars
   // skulle den som provar Read, ångrar sig och byter till Write få en
@@ -59,16 +62,39 @@ export function PracticePanel({
   // Enter gar vidare nar passet ar klart. Den som kor en runda pa tio
   // sektioner ska inte behova sikta med musen tio ganger.
   useEffect(() => {
-    if (!submitted || !nextSectionId) return;
+    if (!submitted) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Enter" && nextSectionId) {
         e.preventDefault();
         router.push(`/practice/${workId}/${nextSectionId}`);
+      }
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        again();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // `again` ar stabil nog for det har — den ror bara lokal state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitted, nextSectionId, workId, router]);
+
+  /**
+   * Samma sektion en gang till.
+   *
+   * Repetition ar hela mekaniken i appen, och att behova ga ut till
+   * listan och tillbaka in for att gora om en strof var det som gjorde
+   * det trogt. Passet ar redan sparat — det har ar ett nytt forsok, inte
+   * en angring av det forra.
+   */
+  function again() {
+    setSubmitted(false);
+    setLastDetail(null);
+    setAttemptKey(k => k + 1);
+    startRef.current = Date.now();
+    clearResult();
+  }
 
   function elapsedSecs(): number {
     return Math.max(1, Math.round((Date.now() - startRef.current) / 1000));
@@ -114,19 +140,21 @@ export function PracticePanel({
 
           <div style={cardStyle}>
             {mode === "read" && (
-              <ReadMode content={content} onComplete={(q) => handleComplete(q)} />
+              <ReadMode key={attemptKey} content={content} onComplete={(q) => handleComplete(q)} />
             )}
             {mode === "hide" && (
-              <HideMode content={content} onComplete={(q) => handleComplete(q)} />
+              <HideMode key={attemptKey} content={content} onComplete={(q) => handleComplete(q)} />
             )}
             {mode === "write" && (
               <WriteMode
+                key={attemptKey}
                 sectionId={sectionId}
                 onComplete={(q, s, d) => handleComplete(q, s, d)}
               />
             )}
             {mode === "recite" && (
               <ReciteMode
+                key={attemptKey}
                 sectionId={sectionId}
                 onComplete={(q, s, d) => handleComplete(q, s, d)}
               />
@@ -152,6 +180,10 @@ export function PracticePanel({
           </p>
 
           <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+            <button onClick={again} style={againStyle}>
+              Again
+            </button>
+
             {nextSectionId ? (
               <button
                 autoFocus
@@ -166,18 +198,14 @@ export function PracticePanel({
               </Link>
             )}
 
-            {nextSectionId && (
-              <Link href={`/work/${workId}`} style={quietLinkStyle}>
-                Stop here
-              </Link>
-            )}
+            <Link href={`/work/${workId}`} style={quietLinkStyle}>
+              Stop here
+            </Link>
           </div>
 
-          {nextSectionId && (
-            <p style={{ fontSize: "11px", color: "var(--bg4)", marginTop: "12px" }}>
-              press Enter for the next one
-            </p>
-          )}
+          <p style={{ fontSize: "11px", color: "var(--bg4)", marginTop: "12px" }}>
+            {nextSectionId ? "Enter for the next · R to repeat this one" : "R to repeat this one"}
+          </p>
 
           {/*
             Erbjudandet kommer HÄR och ingen annanstans: efter att arbetet
@@ -279,6 +307,19 @@ const doneTextStyle: CSSProperties = {
   fontWeight:   300,
   color:        "var(--parch2)",
   marginBottom: "18px",
+};
+
+const againStyle: CSSProperties = {
+  display:      "inline-flex",
+  alignItems:   "center",
+  padding:      "10px 22px",
+  borderRadius: "var(--r2)",
+  border:       "1px solid var(--bord)",
+  background:   "transparent",
+  color:        "var(--parch2)",
+  fontSize:     "13px",
+  fontFamily:   "var(--fb)",
+  cursor:       "pointer",
 };
 
 const quietLinkStyle: CSSProperties = {

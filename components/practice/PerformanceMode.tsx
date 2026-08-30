@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useSpeechRecitation } from "@/hooks/useSpeechRecitation";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
 import type { PerformanceStanding } from "@/lib/performance";
 
 interface PerformanceModeProps {
@@ -24,6 +25,7 @@ interface PerformanceModeProps {
   sectionCount: number;
   standing:     PerformanceStanding;
   passAccuracy: number;
+  isPro:        boolean;
 }
 
 interface RunResult {
@@ -53,7 +55,7 @@ const HESITATION_MS = 3_000;
 
 export function PerformanceMode({
   workId, workTitle, author, partId, partName,
-  sectionCount, standing, passAccuracy,
+  sectionCount, standing, passAccuracy, isPro,
 }: PerformanceModeProps) {
   const [lang, setLang]     = useState("en-US");
   const speech = useSpeechRecitation({ lang });
@@ -197,6 +199,18 @@ export function PerformanceMode({
           <p style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.7, marginBottom: "22px" }}>
             Slipped: {result.missed.slice(0, 12).join(", ")}
           </p>
+        )}
+
+        {/* Milstolpe: titeln togs just. Erbjudandet star EFTER resultatet
+            och efter XP:n, inte i vagen for dem. */}
+        {result.justMastered && !isPro && (
+          <div style={{ marginBottom: "22px" }}>
+            <UpgradeCard
+              feature="PERFORMANCE_ANALYSIS"
+              title="Now keep it"
+              body="Holding a text is harder than taking it. Pro tracks how each performance actually went — where you hesitated, which lines drift first, whether the rhythm is holding — so the ones slipping away are the ones you rehearse."
+            />
+          </div>
         )}
 
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>

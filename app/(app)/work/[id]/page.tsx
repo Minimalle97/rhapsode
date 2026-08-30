@@ -22,6 +22,8 @@ import { masteryOf } from "@/lib/mastery";
 import { learningProgress, RULES } from "@/lib/performance";
 import { standingForWork } from "@/lib/performanceStore";
 import { WorkVisibility } from "@/components/library/WorkVisibility";
+import { getEntitlements } from "@/lib/billing/entitlements";
+import { UpgradeCard } from "@/components/billing/UpgradeCard";
 import type { Metadata } from "next";
 
 // Hämta alltid färsk data — annars kan sidan visa läget före
@@ -85,6 +87,7 @@ export default async function WorkPage({ params, searchParams }: Props) {
     standingForWork(user.id, id),
   ]);
   const learned = learningProgress(levelRows.map(masteryOf));
+  const ent = await getEntitlements(user);
 
   const now = new Date();
 
@@ -276,6 +279,21 @@ export default async function WorkPage({ params, searchParams }: Props) {
           {standing.passed > 0 ? "Perform it again" : "Begin a performance"}
         </Link>
       </div>
+
+      {/*
+        Milstolpe: hela verket sitter. Det ar forsta gangen erbjudandet
+        har nagot konkret att erbjuda — man har just bevisat att man kan
+        texten, och nasta steg ar det som Pro gor vassare.
+      */}
+      {learned >= 100 && !ent.isPro && !standing.isMastered && (
+        <div style={{ marginBottom: "22px" }}>
+          <UpgradeCard
+            feature="ADVANCED_RECITATION"
+            title="Every section is holding"
+            body="The work is learned. What is left is performing it whole — and that is where Pro earns its keep: it reads which lines you hesitate on, how the rhythm holds against the metre, and builds a session out of the places you keep losing."
+          />
+        </div>
+      )}
 
       {nextSection && (
         <Link href={`/practice/${work.id}/${nextSection.id}`} style={{ textDecoration: "none", display: "block", marginBottom: "26px" }}>
