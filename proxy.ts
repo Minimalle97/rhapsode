@@ -21,6 +21,11 @@ const isPublicRoute = createRouteMatcher([
   // från genom att verifiera signaturen mot STRIPE_WEBHOOK_SECRET, vilket
   // är ett starkare bevis än en session.
   "/api/billing/webhook",
+  // Villkor och integritetspolicy maste ga att lasa INNAN man registrerar
+  // sig. Stripe kraver att de ar oppna for att aktivera ett skarpt konto,
+  // och det vore orimligt att begara ett konto for att fa veta vad man
+  // gar med pa.
+  "/legal(.*)",
   "/manifest.json",
   "/icon-(.*)",
   "/apple-touch-icon(.*)",

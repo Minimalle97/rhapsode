@@ -30,6 +30,12 @@ export interface EntitlementUser {
 export interface Entitlements {
   plan:     PlanId;
   source:   PlanSource;
+  /**
+   * Sant nar kontot ar ett utvecklarkonto som just nu tittar pa
+   * gratisversionen. Bara till for att kunna rita vaxeln — behorigheterna
+   * i `features` ar redan de rätta.
+   */
+  devViewingFree?: boolean;
   status:   SubscriptionStatus;
   isPro:    boolean;
   limits:   PlanLimits;
@@ -162,6 +168,23 @@ export const getEntitlements = cache(
     }
 
     const { plan, source, status } = derivePlan(user, grant ?? false);
+
+    // Utvecklarkonton far se produkten som en gratisanvandare.
+    //
+    // Kontrollen av OM man ar utvecklare sker har, pa servern, ur
+    // miljovariabeln eller en inlost dev-kod. Kakan far bara valja mellan
+    // det man redan har och mindre — den kan inte ge nagot. En vanlig
+    // anvandare som satter kakan far darfor ingen effekt alls.
+    if (source === "developer") {
+      const { readDevView } = await import("./devView");
+      if ((await readDevView()) === "free") {
+        return {
+          ...entitlementsForPlan("free", "none", "free"),
+          devViewingFree: true,
+        };
+      }
+    }
+
     return entitlementsForPlan(
       plan, source, status, user.currentPeriodEnd, user.cancelAtPeriodEnd
     );

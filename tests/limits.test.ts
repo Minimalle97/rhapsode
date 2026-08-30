@@ -55,8 +55,8 @@ describe("environment overrides", () => {
 
 describe("price", () => {
   it("defaults to the agreed figures", () => {
-    expect(PRICES.month.amountMinor).toBe(7900);
-    expect(PRICES.year.amountMinor).toBe(69900);
+    expect(PRICES.month.amountMinor).toBe(4900);
+    expect(PRICES.year.amountMinor).toBe(43900);
     expect(PRICES.month.currency).toBe("sek");
   });
 
@@ -70,7 +70,7 @@ describe("price", () => {
   });
 
   it("reports what the annual plan saves", () => {
-    // 699 mot 12 × 79 = 948
-    expect(yearlySavingPercent()).toBe(26);
+    // 439 mot 12 × 49 = 588
+    expect(yearlySavingPercent()).toBe(25);
   });
 });

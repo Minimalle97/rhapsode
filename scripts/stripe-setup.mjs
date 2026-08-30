@@ -21,6 +21,15 @@
 // det som visas i appen och det som dras av Stripe inte kan glida isär.
 
 import Stripe from "stripe";
+// Bara reset-billing ror databasen; klienten skapas latt och kopplas ner
+// i finally-blocket langst ned.
+import { PrismaClient } from "@prisma/client";
+
+let prismaClient = null;
+function db() {
+  if (!prismaClient) prismaClient = new PrismaClient();
+  return prismaClient;
+}
 
 const PRODUCT_KEY = "rhapsode_pro";
 const LOOKUP = {
@@ -365,16 +374,82 @@ async function apply() {
   console.log(`  STRIPE_PRICE_PRO_YEARLY=${out.year}\n`);
 }
 
-const command = process.argv[2] ?? "verify";
+/**
+ * Rensar kopplingarna till Stripe-objekt fran testlaget.
+ *
+ * Ett cus_… och ett sub_… som skapades i testlaget finns inte i det
+ * skarpa — objekten ar helt atskilda. Ligger de kvar i databasen nar du
+ * byter nycklar forsoker koden anvanda dem, och Stripe svarar "No such
+ * customer".
+ *
+ * Koden laker det numera sjalv (se getOrCreateCustomer i
+ * lib/billing/stripe.ts), men att stada bort dem ar anda ratt: annars
+ * ser nagon ut att ha en betald prenumeration som ingen betalar for.
+ *
+ * Ror INTE inlosta koder eller utvecklarkonton — bara det Stripe gav.
+ */
+async function resetBilling(args) {
+  const prisma = db();
+
+  const rows = await prisma.user.findMany({
+    where: {
+      OR: [{ stripeCustomerId: { not: null } }, { stripeSubscriptionId: { not: null } }],
+    },
+    select: {
+      username: true, plan: true, planSource: true, stripeCustomerId: true,
+    },
+  });
+
+  if (!rows.length) {
+    console.log("\n  Nothing to clear.\n");
+    return;
+  }
+
+  console.log(`\n  ${rows.length} account(s) carry Stripe links:\n`);
+  for (const r of rows) {
+    console.log(`    ${r.username}  ${r.plan}/${r.planSource}  ${r.stripeCustomerId ?? "-"}`);
+  }
+
+  if (!args.includes("--yes")) {
+    console.log("\n  This clears the customer and subscription ids and returns");
+    console.log("  Stripe-granted plans to free. Redeemed codes and developer");
+    console.log("  accounts are left alone.\n");
+    console.log("  Re-run with --yes to do it.\n");
+    return;
+  }
+
+  const { count } = await prisma.user.updateMany({
+    where: { planSource: "stripe" },
+    data: {
+      plan: "free", planSource: "none", subscriptionStatus: "free",
+      currentPeriodEnd: null, cancelAtPeriodEnd: false,
+    },
+  });
+
+  await prisma.user.updateMany({
+    where: { OR: [{ stripeCustomerId: { not: null } }, { stripeSubscriptionId: { not: null } }] },
+    data:  { stripeCustomerId: null, stripeSubscriptionId: null },
+  });
+
+  // Webhook-kvittona hor till testlagets event-id:n och fyller ingen
+  // funktion efter bytet.
+  const events = await prisma.stripeEvent.deleteMany({});
+
+  console.log(`\n  Cleared. ${count} account(s) returned to free, ${events.count} webhook receipt(s) removed.\n`);
+}
+
+const [command, ...args] = process.argv.slice(2);
 
 try {
   if (command === "apply") await apply();
-  else if (command === "verify") await verify();
+  else if (command === "reset-billing") await resetBilling(args);
+  else if (command === "verify" || command === undefined) await verify();
   else {
     console.log(
-      "\n  Usage: node --env-file=.env scripts/stripe-setup.mjs <verify|apply>\n\n" +
-      "    verify   check the catalogue, webhook and portal against the config\n" +
-      "    apply    create the product and prices (idempotent)\n"
+      "\n  Usage: node --env-file=.env scripts/stripe-setup.mjs <command>\n\n" +
+      "    verify                 check catalogue, webhook and portal\n" +
+      "    apply                  create the product and prices (idempotent)\n" +
+      "    reset-billing [--yes]  clear test-mode links before going live\n"
     );
   }
 } catch (err) {

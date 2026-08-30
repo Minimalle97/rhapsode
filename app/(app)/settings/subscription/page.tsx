@@ -67,6 +67,12 @@ export default async function SubscriptionPage() {
       </h1>
 
       <SubscriptionPanel view={view} />
+
+      <p style={{ marginTop: "26px", fontSize: "12px", color: "var(--muted)" }}>
+        <Link href="/legal/terms" style={{ color: "var(--muted)" }}>Terms</Link>
+        <span style={{ margin: "0 8px", color: "var(--bg4)" }}>·</span>
+        <Link href="/legal/privacy" style={{ color: "var(--muted)" }}>Privacy</Link>
+      </p>
     </div>
   );
 }

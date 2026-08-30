@@ -1,5 +1,6 @@
 // app/(auth)/sign-up/[[...rest]]/page.tsx
 
+import Link from "next/link";
 import { SignUp } from "@clerk/nextjs";
 
 export const metadata = { title: "Create account" };
@@ -37,6 +38,11 @@ export default function SignUpPage() {
       </div>
 
       <SignUp />
+      <p style={{ marginTop: "28px", fontSize: "12px", color: "var(--muted)" }}>
+        <Link href="/legal/terms" style={{ color: "var(--muted)" }}>Terms</Link>
+        <span style={{ margin: "0 8px", color: "var(--bg4)" }}>·</span>
+        <Link href="/legal/privacy" style={{ color: "var(--muted)" }}>Privacy</Link>
+      </p>
     </div>
   );
 }

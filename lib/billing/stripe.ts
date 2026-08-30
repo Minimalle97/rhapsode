@@ -86,7 +86,23 @@ export async function getOrCreateCustomer(user: {
   id: string;
   stripeCustomerId: string | null;
 }): Promise<string> {
-  if (user.stripeCustomerId) return user.stripeCustomerId;
+  if (user.stripeCustomerId) {
+    // Kontrollera att kunden finns INNAN vi anvander id:t.
+    //
+    // Skalet ar bytet fran test till skarpt lage. Ett cus_… som skapades
+    // i testlaget finns inte i det skarpa — objekten ar helt atskilda.
+    // Utan den har kontrollen skulle den som provkopt i testlaget mota
+    // "No such customer" vid varje kassa och varje portalbesok efter
+    // lanseringen, och felet skulle se ut som ett haveri i appen.
+    //
+    // Fangar ocksa en kund som raderats for hand i dashboarden.
+    try {
+      const existing = await getStripe().customers.retrieve(user.stripeCustomerId);
+      if (!existing.deleted) return user.stripeCustomerId;
+    } catch {
+      // resource_missing eller fel lage. Faller igenom och skapar en ny.
+    }
+  }
 
   const customer = await getStripe().customers.create({
     metadata: { userId: user.id },

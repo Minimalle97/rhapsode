@@ -139,13 +139,16 @@ export interface PlanPrice {
 export const PRICES: Record<BillingInterval, PlanPrice> = {
   month: {
     interval:      "month",
-    amountMinor:   envInt("PRO_PRICE_MONTHLY_MINOR", 7_900), // 79,00 kr
+    amountMinor:   envInt("PRO_PRICE_MONTHLY_MINOR", 4_900), // 49,00 kr
     currency:      process.env.BILLING_CURRENCY ?? "sek",
     stripePriceId: process.env.STRIPE_PRICE_PRO_MONTHLY,
   },
   year: {
     interval:      "year",
-    amountMinor:   envInt("PRO_PRICE_YEARLY_MINOR", 69_900), // 699,00 kr
+    // 439 kr behaller samma rabatt som forut (~25 % mot tolv manader,
+    // dvs drygt tre manader gratis). Ett tal, en variabel — vill du ha
+    // 429 eller 449 ar det den har raden eller PRO_PRICE_YEARLY_MINOR.
+    amountMinor:   envInt("PRO_PRICE_YEARLY_MINOR", 43_900), // 439,00 kr
     currency:      process.env.BILLING_CURRENCY ?? "sek",
     stripePriceId: process.env.STRIPE_PRICE_PRO_YEARLY,
   },
