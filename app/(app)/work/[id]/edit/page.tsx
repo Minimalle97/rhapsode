@@ -14,6 +14,7 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { WorkEditor } from "@/components/library/WorkEditor";
 import { WorkSettings } from "@/components/library/WorkSettings";
+import { CleanupPanel } from "@/components/library/CleanupPanel";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +78,21 @@ export default async function EditWorkPage({ params, searchParams }: Props) {
           author={work.author}
           type={work.type}
           sectionCount={total}
+        />
+      </div>
+
+      <div style={{ maxWidth: "880px", margin: "0 auto", padding: "22px 24px 0" }}>
+        {/*
+          Städningen först. Den är det man kom hit för — resten av sidan
+          är för att rätta enstaka sektioner för hand, vilket man gör
+          efteråt, om alls.
+        */}
+        <CleanupPanel
+          workId={work.id}
+          sectionCount={total}
+          // Utdragen finns redan i listan. Att skicka med dem hit gör
+          // före/efter möjligt utan en extra rundtur till servern.
+          originals={Object.fromEntries(rows.map(r => [r.id, r.content]))}
         />
       </div>
 

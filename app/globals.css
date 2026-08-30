@@ -184,6 +184,19 @@ button, input, select, textarea {
 @media (max-width: 720px) { .rank-nav-bar { display: none; } }
 
 /* ── Sektionsrader (hover i CSS istället för JS) ───────────────── */
+/* Avdelaren mellan fore och efter i stadningens forhandsgranskning.
+   Spalterna radbryts pa smal skarm, och da ar en lodrat harstreck
+   mellan dem fel bild — det ser ut som ett fel, inte som en avdelare. */
+.cleanup-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--bord);
+  flex-shrink: 0;
+}
+@media (max-width: 620px) {
+  .cleanup-divider { display: none; }
+}
+
 .section-row > div {
   transition: border-color .15s ease, background .15s ease;
 }
