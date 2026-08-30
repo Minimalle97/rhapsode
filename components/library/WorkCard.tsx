@@ -22,22 +22,36 @@ interface WorkCardProps {
   collections:          Collection[];
   memberCollectionIds:  string[];
   activeTag?:           string | null;
+  /** 0-100. Rors redan vid forsta passet, inte forst nar en sektion ar klar. */
+  progress:             number;
+  /** Tio godkanda framforanden, och titeln star kvar. Ger den roda ramen. */
+  performanceMastered:  boolean;
+  /** Bemastrad men inte framford pa ett tag. */
+  masteryAtRisk:        boolean;
 }
 
-export function WorkCard({ work, collections, memberCollectionIds, activeTag }: WorkCardProps) {
+export function WorkCard({
+  work, collections, memberCollectionIds, activeTag,
+  progress, performanceMastered, masteryAtRisk,
+}: WorkCardProps) {
   const total    = work.sections.length;
   const mastered = work.sections.filter(
     (s) => s.status === "mastered" || s.status === "permanent"
   ).length;
-  const progress = total > 0 ? Math.round((mastered / total) * 100) : 0;
+  const learned = progress >= 100;
+
+  // Rod ram = mastartiteln galler. Den ar avsiktligt den enda roda saken i
+  // biblioteket, sa att den betyder nagot pa avstand.
+  const border = performanceMastered ? "var(--red)" : "var(--bord)";
+  const hover  = performanceMastered ? "var(--red)" : "rgba(200,164,80,0.3)";
 
   return (
     <div style={{ position: "relative" }}>
       <Link href={`/work/${work.id}`} style={{ textDecoration: "none" }}>
         <div
-          style={cardStyle}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "rgba(200,164,80,0.3)")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "var(--bord)")}
+          style={{ ...cardStyle, borderColor: border }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = hover)}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = border)}
         >
           <p style={typeLabelStyle}>{work.type}</p>
 
@@ -54,20 +68,43 @@ export function WorkCard({ work, collections, memberCollectionIds, activeTag }: 
             </div>
           )}
 
-          {/* Progress bar */}
-          <div style={{ height: "2px", background: "var(--bg4)", borderRadius: "1px", marginBottom: "8px" }}>
+          {/*
+            RATTAT: stapeln visade tidigare bara andelen HELT bemastrade
+            sektioner, alltsa noll under hela den period da man arbetade
+            som mest. Man sag inte att nagot hande.
+
+            Nu ger varje sektion delpoang efter hur langt den kommit, och
+            stapeln borjar rora sig vid forsta passet.
+          */}
+          <div style={{
+            height: "5px", background: "var(--bg4)",
+            borderRadius: "3px", marginBottom: "9px", overflow: "hidden",
+          }}>
             <div
               style={{
                 height:       "100%",
                 width:        `${progress}%`,
-                background:   "var(--gold)",
-                borderRadius: "1px",
-                transition:   "width .3s",
+                background:   performanceMastered
+                  ? "var(--red)"
+                  : learned
+                    ? "linear-gradient(90deg, var(--gold2), var(--gold))"
+                    : "var(--gold2)",
+                borderRadius: "3px",
+                transition:   "width .5s ease",
               }}
             />
           </div>
+
           <p style={{ fontSize: "12px", color: "var(--muted)" }}>
-            {mastered}/{total} sections memorized
+            {performanceMastered ? (
+              <span style={{ color: "var(--red)" }}>
+                Mastered{masteryAtRisk ? " · perform it soon" : ""}
+              </span>
+            ) : learned ? (
+              <span style={{ color: "var(--gold)" }}>Learned · ready to perform</span>
+            ) : (
+              <>{progress}% learned · {mastered}/{total} sections held</>
+            )}
           </p>
         </div>
       </Link>

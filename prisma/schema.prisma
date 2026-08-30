@@ -80,6 +80,11 @@ model Work {
   estimatedMinutes Int      @default(15)
   createdAt        DateTime @default(now())
 
+  /// private | public. Standard ar private, och det ar ett val: en text
+  /// nagon ovar pa kan vara ett tal till en begravning. Den som vill visa
+  /// vad de arbetar med far saga till, inte tvartom.
+  visibility String @default("private")
+
   parts        Part[]
   sections     Section[]
   medals       Medal[]
@@ -131,15 +136,15 @@ model Section {
 }
 
 model PracticeSession {
-  id            String   @id @default(cuid())
-  sectionId     String
-  section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  quality       Int
-  score         Int?
-  mode          String
-  xpEarned      Int      @default(0)
-  durationSecs  Int      @default(0)
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  sectionId    String
+  section      Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  quality      Int
+  score        Int?
+  mode         String
+  xpEarned     Int      @default(0)
+  durationSecs Int      @default(0)
+  createdAt    DateTime @default(now())
 
   // Behålls för att mästerskapsalgoritmen ska kunna förbättras i
   // efterhand utan att gammal historik blir värdelös. Allt här räknas
@@ -163,7 +168,20 @@ model Medal {
   title    String
   earnedAt DateTime @default(now())
 
+  /// work        — alla sektioner bemastrade enligt SM-2. Guld. Behalls.
+  /// performance — tio godkanda framforanden. Rod. Kan forloras.
+  kind   String  @default("work")
+  /// Satt for langa verk dar framforandet galler en del i taget.
+  partId String?
+
+  /// Nar mastartiteln foll. Medaljen raderas inte — den slocknar, och
+  /// tands igen nasta gang kravet ar uppfyllt. Att radera historik for
+  /// att nagon missat tre dagar vore att stryka nagot de faktiskt gjort.
+  lostAt DateTime?
+
   @@index([userId])
+  @@index([userId, kind])
+  @@index([workId, kind])
 }
 
 model DailyGoal {
@@ -368,8 +386,12 @@ model Performance {
   consistency    Int?
   durationSecs   Int  @default(0)
 
-  isBest        Boolean @default(false)
-  detail        Json?
+  /// Rakhades korningen mot de tio som kravs for mastartiteln?
+  /// Under trosceln sparas den anda — man ska kunna se sin kurva, inte
+  /// bara sina segrar.
+  passed Boolean @default(false)
+  isBest Boolean @default(false)
+  detail Json?
 
   createdAt DateTime @default(now())
 

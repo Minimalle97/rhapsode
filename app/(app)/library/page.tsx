@@ -16,6 +16,9 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getEntitlements } from "@/lib/billing/entitlements";
+import { masteryOf } from "@/lib/mastery";
+import { learningProgress } from "@/lib/performance";
+import { standingsForWorks } from "@/lib/performanceStore";
 import { prisma } from "@/lib/db";
 import { buildWorkWhere, getDistinctTags, hasActiveFilters } from "@/lib/works";
 import { WorkCard } from "@/components/library/WorkCard";
@@ -53,8 +56,14 @@ export default async function LibraryPage({ searchParams }: Props) {
         id: true, userId: true, title: true, author: true, type: true,
         tags: true, analysis: true, practiceAdvice: true,
         difficulty: true, estimatedMinutes: true, createdAt: true,
-        // Bara status och nextReview — inte texten
-        sections: { select: { id: true, status: true, nextReview: true } },
+        // Status plus SM-2-lage. Fortfarande inte texten — det ar den
+        // som ar stor.
+        sections: {
+          select: {
+            id: true, status: true, nextReview: true,
+            sm2Reps: true, sm2Interval: true,
+          },
+        },
         collections: { select: { collectionId: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -66,6 +75,20 @@ export default async function LibraryPage({ searchParams }: Props) {
       orderBy: { orderIndex: "asc" },
     }),
   ]);
+
+  // En fraga for alla verk, inte en per kort.
+  const standings = await standingsForWorks(user.id, works.map(w => w.id));
+
+  const progressByWork = new Map<string, number>(
+    works.map(w => [
+      w.id,
+      learningProgress(w.sections.map(sec => masteryOf({
+        status:      sec.status,
+        sm2Reps:     sec.sm2Reps,
+        sm2Interval: sec.sm2Interval,
+      }))),
+    ])
+  );
 
   const availableTags = getDistinctTags(allWorks);
   const hasAnyWorks   = allWorks.length > 0;
@@ -128,6 +151,9 @@ export default async function LibraryPage({ searchParams }: Props) {
               collections={collections}
               memberCollectionIds={work.collections.map(c => c.collectionId)}
               activeTag={filters.tag ?? null}
+              progress={progressByWork.get(work.id) ?? 0}
+              performanceMastered={standings.get(work.id)?.isMastered ?? false}
+              masteryAtRisk={standings.get(work.id)?.standing === "at_risk"}
             />
           ))}
         </div>

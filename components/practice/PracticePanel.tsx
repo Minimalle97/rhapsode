@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePracticeSession } from "@/hooks/usePracticeSession";
 import { XPToast } from "@/components/rank/XPToast";
 import { ReadMode } from "./ReadMode";
@@ -25,6 +26,9 @@ interface PracticePanelProps {
   prevRank:    string;
   /** Uträknat på servern. Styr bara vad som ritas, aldrig vad som tillåts. */
   isPro:       boolean;
+  /** Nästa sektion att öva, om det finns en. Gör repetition till ett tryck. */
+  nextSectionId?:   string | null;
+  nextSectionName?: string | null;
 }
 
 const MODES: { value: PracticeMode; label: string }[] = [
@@ -36,7 +40,9 @@ const MODES: { value: PracticeMode; label: string }[] = [
 
 export function PracticePanel({
   workId, workTitle, sectionId, sectionName, content, prevRank, isPro,
+  nextSectionId, nextSectionName,
 }: PracticePanelProps) {
+  const router = useRouter();
   const { submitSession, result, clearResult } = usePracticeSession(prevRank);
   const [mode, setMode]           = useState<PracticeMode>("read");
   const [submitting, setSubmitting] = useState(false);
@@ -49,6 +55,20 @@ export function PracticePanel({
   // slutförde.
   const startRef = useRef(Date.now());
   useEffect(() => { startRef.current = Date.now(); }, [mode]);
+
+  // Enter gar vidare nar passet ar klart. Den som kor en runda pa tio
+  // sektioner ska inte behova sikta med musen tio ganger.
+  useEffect(() => {
+    if (!submitted || !nextSectionId) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        router.push(`/practice/${workId}/${nextSectionId}`);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [submitted, nextSectionId, workId, router]);
 
   function elapsedSecs(): number {
     return Math.max(1, Math.round((Date.now() - startRef.current) / 1000));
@@ -115,17 +135,49 @@ export function PracticePanel({
         </>
       ) : (
         <div style={doneStyle}>
-          <p style={doneTextStyle}>Saved. Well practiced.</p>
+          {/*
+            RATTAT: har stod tidigare en helskarm som sa "Saved. Well
+            practiced." och en lank tillbaka till sektionslistan. For den
+            som ovar tio sektioner i rad betydde det tio helskarmar, tio
+            resor till listan och tio nya klick for att hitta nasta.
+            
+            Nu ar resultatet en rad och nasta sektion en knapp. Enter gor
+            samma sak, sa att en repetitionsrunda kan koras utan att flytta
+            handen till musen.
+          */}
+          <p style={doneTextStyle}>
+            {lastDetail && lastDetail.wordsTotal > 0
+              ? `${lastDetail.wordsCorrect} of ${lastDetail.wordsTotal} words held`
+              : "Saved"}
+          </p>
 
-          {lastDetail && lastDetail.wordsTotal > 0 && (
-            <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "20px" }}>
-              {lastDetail.wordsCorrect} of {lastDetail.wordsTotal} words held.
+          <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+            {nextSectionId ? (
+              <button
+                autoFocus
+                onClick={() => router.push(`/practice/${workId}/${nextSectionId}`)}
+                style={continueLinkStyle}
+              >
+                Next{nextSectionName ? ` · ${nextSectionName}` : ""} →
+              </button>
+            ) : (
+              <Link href={`/work/${workId}`} style={continueLinkStyle}>
+                Back to {workTitle}
+              </Link>
+            )}
+
+            {nextSectionId && (
+              <Link href={`/work/${workId}`} style={quietLinkStyle}>
+                Stop here
+              </Link>
+            )}
+          </div>
+
+          {nextSectionId && (
+            <p style={{ fontSize: "11px", color: "var(--bg4)", marginTop: "12px" }}>
+              press Enter for the next one
             </p>
           )}
-
-          <Link href={`/work/${workId}`} style={continueLinkStyle}>
-            Back to {workTitle}
-          </Link>
 
           {/*
             Erbjudandet kommer HÄR och ingen annanstans: efter att arbetet
@@ -217,15 +269,25 @@ const cardStyle: CSSProperties = {
 
 const doneStyle: CSSProperties = {
   textAlign: "center",
-  padding:   "60px 0",
+  // Var 60px. Kortare nu — det har ar en mellanstation, inte en malgang.
+  padding:   "28px 0",
 };
 
 const doneTextStyle: CSSProperties = {
   fontFamily:   "var(--fd)",
-  fontSize:     "22px",
+  fontSize:     "20px",
   fontWeight:   300,
-  color:        "var(--parch)",
+  color:        "var(--parch2)",
   marginBottom: "18px",
+};
+
+const quietLinkStyle: CSSProperties = {
+  display:        "inline-flex",
+  alignItems:     "center",
+  padding:        "10px 18px",
+  color:          "var(--muted)",
+  fontSize:       "13px",
+  textDecoration: "none",
 };
 
 const continueLinkStyle: CSSProperties = {
@@ -237,4 +299,6 @@ const continueLinkStyle: CSSProperties = {
   color:          "var(--gold)",
   fontSize:       "13px",
   textDecoration: "none",
+  fontFamily:     "var(--fb)",
+  cursor:         "pointer",
 };

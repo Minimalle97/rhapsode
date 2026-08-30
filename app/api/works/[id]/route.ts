@@ -45,6 +45,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     if (typeof body.type === "string" && TYPES.includes(body.type.toUpperCase())) {
       data.type = body.type.toUpperCase();
     }
+    if (typeof body.visibility === "string" &&
+        ["private", "public"].includes(body.visibility)) {
+      data.visibility = body.visibility;
+    }
     if (Array.isArray(body.tags)) {
       data.tags = body.tags
         .slice(0, 8)
@@ -59,7 +63,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const updated = await prisma.work.update({
       where:  { id },
       data,
-      select: { id: true, title: true, author: true, type: true, tags: true },
+      select: { id: true, title: true, author: true, type: true, tags: true, visibility: true },
     });
 
     return NextResponse.json(updated);

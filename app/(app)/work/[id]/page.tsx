@@ -18,6 +18,10 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ProjectionCard } from "@/components/stats/ProjectionCard";
+import { masteryOf } from "@/lib/mastery";
+import { learningProgress, RULES } from "@/lib/performance";
+import { standingForWork } from "@/lib/performanceStore";
+import { WorkVisibility } from "@/components/library/WorkVisibility";
 import type { Metadata } from "next";
 
 // Hämta alltid färsk data — annars kan sidan visa läget före
@@ -66,10 +70,21 @@ export default async function WorkPage({ params, searchParams }: Props) {
     select: {
       id: true, title: true, author: true, type: true,
       analysis: true, practiceAdvice: true,
-      difficulty: true, estimatedMinutes: true,
+      difficulty: true, estimatedMinutes: true, visibility: true,
     },
   });
   if (!work) notFound();
+
+  // Inlarningskurvan raknas ur sektionernas SM-2-lage, med delpoang, sa
+  // att den ror sig medan man arbetar och inte forst nar nagot ar klart.
+  const [levelRows, standing] = await Promise.all([
+    prisma.section.findMany({
+      where:  { workId: id },
+      select: { status: true, sm2Reps: true, sm2Interval: true },
+    }),
+    standingForWork(user.id, id),
+  ]);
+  const learned = learningProgress(levelRows.map(masteryOf));
 
   const now = new Date();
 
@@ -121,7 +136,6 @@ export default async function WorkPage({ params, searchParams }: Props) {
     perPart.set(key, acc);
   }
 
-  const pct        = total > 0 ? Math.round((mastered / total) * 100) : 0;
   const startedPct = total > 0 ? Math.round((started / total) * 100) : 0;
 
   const nextPartName = nextSection?.partId
@@ -152,22 +166,28 @@ export default async function WorkPage({ params, searchParams }: Props) {
             alignItems: "baseline", marginBottom: "7px",
           }}>
             <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-              {mastered.toLocaleString()} mastered · {started.toLocaleString()} in progress · {total.toLocaleString()} total
+              {mastered.toLocaleString()} held · {started.toLocaleString()} in progress · {total.toLocaleString()} sections
             </span>
             <span style={{
               fontFamily: "var(--fd)", fontSize: "16px",
-              color: pct === 100 ? "var(--gold)" : "var(--parch2)",
+              color: learned === 100 ? "var(--gold)" : "var(--parch2)",
             }}>
-              {pct}%
+              {learned}%
             </span>
           </div>
-          <div style={{ ...track, position: "relative" }}>
+          {/* Delpoang per sektion, sa att stapeln ror sig fran forsta passet. */}
+          <div style={{ ...track, height: "5px", position: "relative" }}>
             <div style={{
               position: "absolute", inset: 0,
               width: `${startedPct}%`, background: "var(--gold3)",
               borderRadius: "2px", transition: "width .6s ease",
             }} />
-            <div style={{ ...fill, position: "relative", width: `${pct}%` }} />
+            <div style={{
+              ...fill, position: "relative", width: `${learned}%`,
+              background: standing.isMastered
+                ? "var(--red)"
+                : "linear-gradient(90deg, var(--gold2), var(--gold))",
+            }} />
           </div>
         </div>
 
@@ -199,7 +219,8 @@ export default async function WorkPage({ params, searchParams }: Props) {
           <span>{work.difficulty}</span>
           {dueCount > 0 && <span style={{ color: "var(--gold)" }}>{dueCount} due now</span>}
 
-          <span style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+          <span style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+            <WorkVisibility workId={work.id} visibility={work.visibility} />
             <Link href={`/work/${work.id}/edit`} style={headerBtn}>
               Clean up
             </Link>
@@ -209,6 +230,52 @@ export default async function WorkPage({ params, searchParams }: Props) {
           </span>
         </div>
       </header>
+
+      {/*
+        Framforandet. Kortet byter ton med laget: en inbjudan nar texten
+        sitter, en rakning medan man samlar de tio, och en varning nar
+        titeln haller pa att falla.
+      */}
+      <div style={{
+        background: standing.standing === "at_risk" ? "rgba(192,95,114,0.07)" : "var(--bg2)",
+        border: `1px solid ${standing.isMastered ? "rgba(192,95,114,0.32)" : "var(--bord)"}`,
+        borderRadius: "var(--r)", padding: "18px 22px", marginBottom: "22px",
+      }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+          <p style={{ ...eyebrow, color: standing.isMastered ? "var(--red)" : "var(--gold)", marginBottom: 0 }}>
+            {standing.isMastered ? "Mastered" : "Performance"}
+          </p>
+          <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+            {standing.passed} of {standing.required} performances
+          </span>
+        </div>
+
+        <p style={{ fontSize: "13px", color: "var(--parch2)", lineHeight: 1.7, margin: "10px 0 14px" }}>
+          {standing.standing === "at_risk" ? (
+            <>Not performed in {standing.daysSinceLastPass} day
+              {standing.daysSinceLastPass === 1 ? "" : "s"}. The title falls in{" "}
+              {standing.daysUntilLapse} day{standing.daysUntilLapse === 1 ? "" : "s"}.</>
+          ) : standing.standing === "lapsed" ? (
+            <>The title has lapsed. Ten performances at {RULES.passAccuracy}% or better will bring it back.</>
+          ) : standing.isMastered ? (
+            <>Held. Perform it every few days to keep it.</>
+          ) : learned >= 100 ? (
+            <>Every section is holding. Perform the whole thing from memory —
+              {" "}{RULES.runsForMastery} at {RULES.passAccuracy}% or better takes the title.</>
+          ) : (
+            <>Recite the whole work from memory, with nothing in front of you.
+              Available at any point, but it bites before the sections settle.</>
+          )}
+        </p>
+
+        <Link href={`/work/${work.id}/perform`} style={{
+          ...headerBtn,
+          border: `1px solid ${standing.isMastered || learned >= 100 ? "var(--red)" : "var(--bord)"}`,
+          color: standing.isMastered || learned >= 100 ? "var(--red)" : "var(--parch2)",
+        }}>
+          {standing.passed > 0 ? "Perform it again" : "Begin a performance"}
+        </Link>
+      </div>
 
       {nextSection && (
         <Link href={`/practice/${work.id}/${nextSection.id}`} style={{ textDecoration: "none", display: "block", marginBottom: "26px" }}>

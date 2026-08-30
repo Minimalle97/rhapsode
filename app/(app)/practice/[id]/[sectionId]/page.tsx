@@ -59,6 +59,33 @@ export default async function PracticePage({ params }: Props) {
 
   if (!section) notFound();
 
+  // Nasta sektion att ova, sa att repetition blir ett tryck i stallet for
+  // en resa tillbaka till listan. Det forfallna forst — det ar det som
+  // haller pa att glommas — annars nasta i ordningen efter den har.
+  const now = new Date();
+  const current = await prisma.section.findUnique({
+    where:  { id: sectionId },
+    select: { orderIndex: true },
+  });
+
+  const next =
+    (await prisma.section.findFirst({
+      where: {
+        workId: id, id: { not: sectionId },
+        nextReview: { lte: now },
+      },
+      orderBy: { nextReview: "asc" },
+      select:  { id: true, name: true },
+    })) ??
+    (await prisma.section.findFirst({
+      where: {
+        workId: id, id: { not: sectionId },
+        orderIndex: { gt: current?.orderIndex ?? -1 },
+      },
+      orderBy: { orderIndex: "asc" },
+      select:  { id: true, name: true },
+    }));
+
   return (
     <PracticePanel
       workId={section.work.id}
@@ -71,6 +98,8 @@ export default async function PracticePage({ params }: Props) {
       content={section.content}
       prevRank={user.rank}
       isPro={ent.isPro}
+      nextSectionId={next?.id ?? null}
+      nextSectionName={next?.name ?? null}
     />
   );
 }

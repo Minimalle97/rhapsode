@@ -23,7 +23,7 @@ export default async function ProfilePage() {
   const [medals, works] = await Promise.all([
     prisma.medal.findMany({
       where:   { userId: user.id },
-      include: { work: { select: { title: true, author: true, type: true } } },
+      include: { work: { select: { title: true, author: true, type: true, visibility: true } } },
       orderBy: { earnedAt: "desc" },
     }),
     prisma.work.findMany({
@@ -174,6 +174,12 @@ export default async function ProfilePage() {
               author={medal.work.author}
               type={medal.work.type}
               earnedAt={medal.earnedAt}
+              kind={medal.kind === "performance" ? "performance" : "work"}
+              lostAt={medal.lostAt}
+              // Ett privat verk namnges inte ens pa din egen profil.
+              // Sidan ar delbar, och en skarmbild av den ska inte avsloja
+              // vad nagon ovar pa i tysthet.
+              nameWork={medal.work.visibility === "public"}
             />
           ))}
         </div>
