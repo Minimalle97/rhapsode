@@ -5,12 +5,17 @@
 
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { rateLimit } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
 import type { RhapsodeExport } from "@/types/export";
 
 export async function GET() {
   try {
     const user = await requireUser();
+    // Exporten laser hela biblioteket. Billig att be om, dyr att svara pa.
+    const limited = await rateLimit(`export:${user.id}`, 10, 3600);
+    if (limited) return limited;
+
 
     const works = await prisma.work.findMany({
       where:   { userId: user.id },

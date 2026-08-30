@@ -5,12 +5,18 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { rateLimit } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
 import { validateHandle } from "@/lib/friends";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    const user = await requireUser();
+
+    // Bromsar bade uppslagningar och forsok att rakna upp namn.
+    const limited = await rateLimit(`handle:${user.id}`, 60, 60);
+    if (limited) return limited;
+
     const q = req.nextUrl.searchParams.get("q") ?? "";
     const check = validateHandle(q);
 

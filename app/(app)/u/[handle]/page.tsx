@@ -46,8 +46,11 @@ export default async function PublicProfile({ params }: Props) {
         orderBy: { earnedAt: "desc" },
         take: 30,
         select: {
-          id: true, title: true, earnedAt: true,
-          work: { select: { title: true, author: true, type: true } },
+          id: true, title: true, earnedAt: true, kind: true, lostAt: true,
+          // visibility hamtas for att kunna DOLJA titeln nedan. Medaljen
+          // visas anda — bedriften ar deras — men vilken text den galler
+          // ar inte allmangods bara for att den gav en medalj.
+          work: { select: { title: true, author: true, type: true, visibility: true } },
         },
       },
       _count: { select: { works: true } },
@@ -64,10 +67,20 @@ export default async function PublicProfile({ params }: Props) {
     ? Math.round(((person.xp - rank.xpRequired) / (next.xpRequired - rank.xpRequired)) * 100)
     : 100;
 
-  // Verkslistan bara för vänner
+  // Verkslistan: bara för vänner, OCH bara det som delats.
+  //
+  // RÄTTAT: det här hämtade tidigare ALLA verk, inte bara de publika.
+  // Synlighetsväljaren på verkssidan hade därmed ingen verkan här — den
+  // som satte en text till privat fick ändå den visad för sina vänner.
+  // "Privat" måste betyda privat överallt, annars är väljaren en lögn.
+  //
+  // Egna profilen är undantaget: där ser man förstås allt sitt eget.
   const works = isFriend
     ? await prisma.work.findMany({
-        where:   { userId: person.id },
+        where: {
+          userId: person.id,
+          ...(state === "self" ? {} : { visibility: "public" }),
+        },
         orderBy: { createdAt: "desc" },
         take:    40,
         select:  { id: true, title: true, author: true, type: true },
@@ -189,10 +202,16 @@ export default async function PublicProfile({ params }: Props) {
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontFamily: "var(--fd)", fontSize: "15px", color: "var(--parch)" }}>
-                  {m.title}
+                  {m.work.visibility === "public"
+                    ? m.title
+                    : m.kind === "performance"
+                      ? "Performed from memory"
+                      : "A work held entire"}
                 </p>
                 <p style={{ fontSize: "11px", color: "var(--muted)" }}>
-                  {m.work.title} · {m.work.author}
+                  {m.work.visibility === "public"
+                    ? `${m.work.title} · ${m.work.author}`
+                    : "A private work"}
                 </p>
               </div>
             </div>

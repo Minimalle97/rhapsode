@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { rateLimit } from "@/lib/http/guard";
 import { getEntitlements } from "@/lib/billing/entitlements";
 import { remainingWorkSlots } from "@/lib/billing/limits";
 import { prisma } from "@/lib/db";
@@ -20,6 +21,10 @@ interface ImportResult {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
+    // Skriver hela sakerhetskopior. Ett tak halller ett skript borta.
+    const limited = await rateLimit(`importjson:${user.id}`, 10, 3600);
+    if (limited) return limited;
+
 
     let payload: RhapsodeExport;
     try {

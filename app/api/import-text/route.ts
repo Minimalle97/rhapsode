@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { getEntitlements } from "@/lib/billing/entitlements";
 import { assertWorkAllowance } from "@/lib/billing/limits";
-import { toResponse } from "@/lib/http/guard";
+import { rateLimit, toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
 import { extractTextFromFile, cleanText, MAX_CHARS } from "@/lib/extract";
 import { segmentWork } from "@/lib/segment";
@@ -30,6 +30,10 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const ent  = await getEntitlements(user);
+    // Import laser en PDF och ringer en modell. Tjugo i timmen racker langt for en manniska.
+    const limited = await rateLimit(`import:${user.id}`, 20, 3600);
+    if (limited) return limited;
+
 
     // Taket på antal verk kontrolleras FÖRE filen läses. Att extrahera en
     // tiomegabytes PDF och sedan säga nej vore slöseri med både tid och
