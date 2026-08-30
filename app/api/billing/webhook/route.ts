@@ -19,12 +19,17 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/billing/stripe";
 import { claimEvent, handleStripeEvent } from "@/lib/billing/sync";
 import { pruneExpired } from "@/lib/usage/counters";
+import { cleanSecret } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  // Signeringshemligheten jamfors, den skickas inte i en header — men
+  // ett radbrott pa slutet skulle anda gora att ingen signatur stammer.
+  const secret = process.env.STRIPE_WEBHOOK_SECRET
+    ? cleanSecret(process.env.STRIPE_WEBHOOK_SECRET)
+    : "";
   if (!secret) {
     console.error("STRIPE_WEBHOOK_SECRET is not set — refusing the webhook");
     return NextResponse.json({ error: "Not configured" }, { status: 503 });

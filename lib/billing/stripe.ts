@@ -16,14 +16,17 @@
 
 import Stripe from "stripe";
 import { PRICES, type BillingInterval } from "./plans";
+import { readSecret, hasSecret } from "@/lib/env";
 import { prisma } from "@/lib/db";
 
 let stripe: Stripe | null = null;
 
 export function getStripe(): Stripe {
   if (!stripe) {
-    const key = process.env.STRIPE_SECRET_KEY;
-    if (!key) throw new Error("STRIPE_SECRET_KEY is not set");
+    // readSecret trimmar bort radbrott. Ett radbrott pa slutet av en
+    // nyckel klistrad i Vercel gjorde att Authorization-headern inte gick
+    // att bygga, och felet kom tillbaka som "connection to Stripe".
+    const key = readSecret("STRIPE_SECRET_KEY");
     // apiVersion utelämnas med flit. SDK:n använder då den version den
     // byggdes mot (2026-08-26.dahlia i stripe@22), vilket är den senaste.
     // Pinnar man en version här fastnar man tyst på den även efter en
@@ -34,7 +37,7 @@ export function getStripe(): Stripe {
 }
 
 export function stripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY);
+  return hasSecret("STRIPE_SECRET_KEY");
 }
 
 /**

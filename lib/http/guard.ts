@@ -12,6 +12,7 @@ import { requireUser, type SessionUser } from "@/lib/auth";
 import { getEntitlements, FeatureLockedError, type Entitlements } from "@/lib/billing/entitlements";
 import { AiQuotaError, AiRateLimitError } from "@/lib/ai/run";
 import { WorkLimitError } from "@/lib/billing/limits";
+import { EnvError } from "@/lib/env";
 import { consume, slidingWindow } from "@/lib/usage/counters";
 import { PLANS } from "@/lib/billing/plans";
 
@@ -104,6 +105,17 @@ export function toResponse(err: unknown): NextResponse {
   const msg = err instanceof Error ? err.message : "Unknown error";
   if (msg === "UNAUTHORIZED") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // En felkonfigurerad nyckel ar inte ett fel i begaran och inte ett
+  // haveri — det ar en installation som inte ar klar. 503 sager det, och
+  // meddelandet i loggen namnger variabeln utan att avsloja vardet.
+  if (err instanceof EnvError) {
+    console.error("Configuration problem:", err.message);
+    return NextResponse.json(
+      { error: "Billing is not configured correctly on this deployment." },
+      { status: 503 }
+    );
   }
 
   // Interna fel läcker inte ut. Stacken hör hemma i loggen, inte i svaret.

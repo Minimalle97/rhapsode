@@ -14,13 +14,15 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { modelFor, type ModelTier } from "./ai/models";
+import { readSecret } from "./env";
 
 let client: Anthropic | null = null;
 
 function getClient(): Anthropic {
   if (!client) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+    // Samma fallgrop som med Stripe-nyckeln: ett radbrott fran ett
+    // klistrat varde gar inte att skicka i en header.
+    const apiKey = readSecret("ANTHROPIC_API_KEY");
     // Nyckeln lämnar aldrig servern. Ingen NEXT_PUBLIC_-variant får finnas.
     client = new Anthropic({ apiKey, maxRetries: 2 });
   }
