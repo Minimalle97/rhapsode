@@ -43,9 +43,43 @@ function envInt(name, fallback) {
 }
 
 const CURRENCY = (process.env.BILLING_CURRENCY ?? "sek").toLowerCase();
+
+/**
+ * Beloppen kommer UTESLUTANDE fran miljon. Inga standardvarden har.
+ *
+ * RATTAT, och det har var en riktig miss: skriptet hade en egen kopia av
+ * priserna som standardvarden. Nar priset andrades i
+ * lib/billing/plans.ts men inte har skapade skriptet glatt prisobjekt
+ * med det GAMLA beloppet — tva sanningar om vad tjansten kostar, och den
+ * som vann var den ingen tittade pa.
+ *
+ * Att vagra gissa ar hela poangen. Saknas variabeln ska korningen stanna,
+ * inte hitta pa ett pris.
+ */
+function requiredAmount(name) {
+  const raw = process.env[name];
+  const n = Number(raw);
+  if (!raw || !Number.isFinite(n) || n <= 0) {
+    console.error(
+      `
+  ${name} is not set.
+
+` +
+      `  Prices are never guessed here — that is how two different
+` +
+      `  amounts end up in the code and in Stripe. Set it in .env
+` +
+      `  (and in Vercel) and run again.
+`
+    );
+    process.exit(1);
+  }
+  return Math.floor(n);
+}
+
 const AMOUNT = {
-  month: envInt("PRO_PRICE_MONTHLY_MINOR", 7_900),
-  year:  envInt("PRO_PRICE_YEARLY_MINOR", 69_900),
+  get month() { return requiredAmount("PRO_PRICE_MONTHLY_MINOR"); },
+  get year()  { return requiredAmount("PRO_PRICE_YEARLY_MINOR"); },
 };
 
 const money = minor =>
@@ -132,6 +166,21 @@ async function findPrice(stripe, lookupKey) {
     active: true,
     limit: 1,
   });
+  return found.data[0] ?? null;
+}
+
+/**
+ * Priser med den har lookup-nyckeln, AVEN arkiverade.
+ *
+ * RATTAT: skriptet kunde inte aterhamta sig fran en halvkord korning.
+ * Ett arkiverat pris behaller sin lookup_key, men findPrice() letade bara
+ * bland aktiva och sag det darfor inte — sa nasta korning forsokte skapa
+ * ett nytt pris med en nyckel som redan var upptagen, och Stripe sa nej.
+ * Man fastnade: gamla priset borta, nya gick inte att skapa, kassan
+ * trasig. Nu letas aven de arkiverade upp sa att nyckeln kan frigoras.
+ */
+async function findAnyPrice(stripe, lookupKey) {
+  const found = await stripe.prices.list({ lookup_keys: [lookupKey], limit: 10 });
   return found.data[0] ?? null;
 }
 
@@ -320,6 +369,20 @@ async function apply() {
 
   for (const interval of ["month", "year"]) {
     let existing = await findPrice(stripe, LOOKUP[interval]);
+
+    // Haller ett ARKIVERAT pris fortfarande nyckeln? Frigor den forst.
+    //
+    // Maste ske innan bade adoption och skapande — bada satter nyckeln,
+    // och Stripe tillater bara en agare at gangen. Utan det har steget
+    // gar bara den forsta korningen igenom, och en avbruten korning
+    // lamnar kontot i ett lage som inte gar att reparera med skriptet.
+    if (!existing) {
+      const stale = await findAnyPrice(stripe, LOOKUP[interval]);
+      if (stale) {
+        console.log(`  Releasing the lookup key held by archived ${stale.id}.`);
+        await stripe.prices.update(stale.id, { lookup_key: null });
+      }
+    }
 
     // Inget märkt pris — men kanske ett som skapats för hand och stämmer.
     // Då märks det i stället för att dubbleras.

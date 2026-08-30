@@ -3,6 +3,8 @@
 // en detalj — de kommer att ändras.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync } from "fs";
+import path from "path";
 import { LIMITS, PRICES, formatPrice, yearlySavingPercent, ENTITLEMENTS } from "@/lib/billing/plans";
 
 afterEach(() => { vi.resetModules(); });
@@ -55,8 +57,8 @@ describe("environment overrides", () => {
 
 describe("price", () => {
   it("defaults to the agreed figures", () => {
-    expect(PRICES.month.amountMinor).toBe(4900);
-    expect(PRICES.year.amountMinor).toBe(43900);
+    expect(PRICES.month.amountMinor).toBe(4990);
+    expect(PRICES.year.amountMinor).toBe(44900);
     expect(PRICES.month.currency).toBe("sek");
   });
 
@@ -70,7 +72,25 @@ describe("price", () => {
   });
 
   it("reports what the annual plan saves", () => {
-    // 439 mot 12 × 49 = 588
+    // 449 mot 12 × 49,90 = 598,80
     expect(yearlySavingPercent()).toBe(25);
+  });
+});
+
+describe("one source of truth for the amount", () => {
+  it("the setup script has no price defaults of its own", () => {
+    // Det har ar en riktig bugg som intraffade: skriptet hade en egen
+    // kopia av beloppen som standardvarden. Priset andrades i plans.ts
+    // men inte dar, och skriptet skapade prisobjekt med det GAMLA
+    // beloppet — tva sanningar om vad tjansten kostar.
+    const script = readFileSync(
+      path.join(path.resolve(__dirname, ".."), "scripts/stripe-setup.mjs"),
+      "utf8"
+    );
+    expect(script).not.toMatch(/PRO_PRICE_MONTHLY_MINOR",\s*[\d_]+/);
+    expect(script).not.toMatch(/PRO_PRICE_YEARLY_MINOR",\s*[\d_]+/);
+    // Den ska stanna i stallet for att gissa.
+    expect(script).toMatch(/requiredAmount/);
+    expect(script).toMatch(/is not set/);
   });
 });
