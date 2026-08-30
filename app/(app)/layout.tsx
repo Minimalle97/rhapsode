@@ -4,6 +4,7 @@
 import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { getEntitlements } from "@/lib/billing/entitlements";
 import { getRank, getNextRank, xpToNextRank } from "@/lib/xp";
 import { RankBar } from "@/components/rank/RankBar";
 import { NavTabs } from "@/components/nav/NavTabs";
@@ -15,6 +16,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user   = await requireUser();
+  const ent    = await getEntitlements(user);
   const rank   = getRank(user.xp);
   const next   = getNextRank(user.xp);
   const toNext = xpToNextRank(user.xp);
@@ -29,8 +31,13 @@ export default async function AppLayout({
       <a href="#main" className="skip-link">Skip to content</a>
 
       <header className="app-nav">
-        <Link href="/library" className="brand" aria-label="Rhapsode home">
+        <Link
+          href="/library"
+          className="brand"
+          aria-label={ent.isPro ? "Rhapsode Pro home" : "Rhapsode home"}
+        >
           Rhap<span>sode</span>
+          {ent.isPro && <em className="brand-pro">Pro</em>}
         </Link>
 
         <div style={{ flex: 1 }} />

@@ -106,6 +106,20 @@ button, input, select, textarea {
 }
 .brand span { color: var(--gold); }
 
+/* Pro i ordmarket.
+   Ingen etikett, ingen ram, ingen bakgrund — bara ordet, mindre och i
+   guld, satt i samma snitt som resten. Det ska lasas som en del av
+   namnet, inte som ett marke nagon klistrat pa. */
+.brand-pro {
+  font-style: normal;
+  font-size: 0.62em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-left: 0.5em;
+  vertical-align: 0.18em;
+}
+
 .nav-tab {
   padding: 7px 13px;
   border-radius: var(--r3);
