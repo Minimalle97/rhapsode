@@ -68,15 +68,24 @@ export function isDeveloper(user: Pick<EntitlementUser, "id" | "clerkId">): bool
  */
 export function derivePlan(
   user: EntitlementUser,
-  hasActiveGrant: boolean,
+  grant: boolean | { plan: string },
   now: Date = new Date()
 ): { plan: PlanId; source: PlanSource; status: SubscriptionStatus } {
   if (isDeveloper(user)) {
     return { plan: "pro", source: "developer", status: "active" };
   }
 
-  if (hasActiveGrant) {
-    return { plan: "pro", source: "grant", status: "active" };
+  if (grant) {
+    // En kod kan vara utfardad som "developer". Da beter sig kontot som
+    // ett utvecklarkonto — Pro pa livstid, och DEV-markoren syns — utan
+    // att nagot behover in i miljovariabeln. Det ar sa du ger nagon
+    // permanent atkomst utan en ny deploy.
+    const isDevGrant = typeof grant === "object" && grant.plan === "developer";
+    return {
+      plan:   "pro",
+      source: isDevGrant ? "developer" : "grant",
+      status: "active",
+    };
   }
 
   const status = normaliseStatus(user.subscriptionStatus);
@@ -146,30 +155,39 @@ export function entitlementsForPlan(
  */
 export const getEntitlements = cache(
   async (user: EntitlementUser): Promise<Entitlements> => {
-    let hasGrant = false;
+    let grant: { plan: string } | null = null;
 
     if (user.planSource === "grant" || user.plan === "free") {
-      hasGrant = await hasActiveGrant(user.id);
+      grant = await activeGrant(user.id);
     }
 
-    const { plan, source, status } = derivePlan(user, hasGrant);
+    const { plan, source, status } = derivePlan(user, grant ?? false);
     return entitlementsForPlan(
       plan, source, status, user.currentPeriodEnd, user.cancelAtPeriodEnd
     );
   }
 );
 
-export async function hasActiveGrant(userId: string, now: Date = new Date()): Promise<boolean> {
-  const grant = await prisma.accessGrant.findFirst({
+/** Den gallande behorigheten, eller null. Innehaller sin plan. */
+export async function activeGrant(
+  userId: string,
+  now: Date = new Date()
+): Promise<{ plan: string } | null> {
+  return prisma.accessGrant.findFirst({
     where: {
       userId,
       revokedAt: null,
       startsAt:  { lte: now },
       OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
     },
-    select: { id: true },
+    // En utvecklarkod slar en vanlig, om nagon har bada.
+    orderBy: { plan: "desc" },
+    select:  { plan: true },
   });
-  return grant !== null;
+}
+
+export async function hasActiveGrant(userId: string, now: Date = new Date()): Promise<boolean> {
+  return (await activeGrant(userId, now)) !== null;
 }
 
 // ── Frågan man faktiskt ställer ───────────────────────────────────────

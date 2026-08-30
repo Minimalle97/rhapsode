@@ -150,3 +150,33 @@ describe("feature access", () => {
     expect(ending.isPro).toBe(true);
   });
 });
+
+describe("developer access codes", () => {
+  it("a developer grant shows as a developer account, not just pro", () => {
+    // Sa att DEV-markoren tands och du ser att koden gick igenom, utan
+    // att nagot behover in i miljovariabeln eller en ny deploy goras.
+    const r = derivePlan(user({ planSource: "grant" }), { plan: "developer" }, NOW);
+    expect(r.plan).toBe("pro");
+    expect(r.source).toBe("developer");
+  });
+
+  it("an ordinary grant stays an ordinary grant", () => {
+    const r = derivePlan(user({ planSource: "grant" }), { plan: "pro" }, NOW);
+    expect(r.source).toBe("grant");
+  });
+
+  it("still accepts the plain boolean form", () => {
+    expect(derivePlan(user({ planSource: "grant" }), true, NOW).source).toBe("grant");
+  });
+
+  it("the environment key still outranks any code", () => {
+    const original = process.env.RHAPSODE_DEVELOPER_USER_IDS;
+    process.env.RHAPSODE_DEVELOPER_USER_IDS = "u1";
+    try {
+      expect(derivePlan(user(), { plan: "pro" }, NOW).source).toBe("developer");
+    } finally {
+      if (original === undefined) delete process.env.RHAPSODE_DEVELOPER_USER_IDS;
+      else process.env.RHAPSODE_DEVELOPER_USER_IDS = original;
+    }
+  });
+});

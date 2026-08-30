@@ -105,7 +105,11 @@ export async function redeemCode(userId: string, rawCode: string): Promise<Redee
       await tx.user.update({
         where: { id: userId },
         data: {
-          plan:               record.plan,
+          // User.plan kanner bara free och pro. En utvecklarkod ger ocksa
+          // Pro — det ar GRANTEN som bar utvecklarflaggan, och den lases
+          // av derivePlan(). Att skriva "developer" har hade gett en
+          // plan-strang som LIMITS inte kan sla upp.
+          plan:               "pro",
           planSource:         "grant",
           subscriptionStatus: "active",
           currentPeriodEnd:   expiresAt,
@@ -124,6 +128,7 @@ export async function redeemCode(userId: string, rawCode: string): Promise<Redee
 }
 
 export interface CreateCodeInput {
+  /** "pro" eller "developer". Det senare ar Pro pa livstid plus DEV-markoren. */
   plan?:           string;
   durationDays?:   number | null;
   maxRedemptions?: number;
@@ -134,12 +139,15 @@ export interface CreateCodeInput {
 
 /** Används av scripts/access-code.mjs. Ingen HTTP-väg leder hit. */
 export async function createAccessCode(input: CreateCodeInput = {}) {
-  const code = generateCode(input.prefix);
+  const plan = input.plan === "developer" ? "developer" : "pro";
+  // Utvecklarkoder ar per definition utan slutdatum — det ar hela
+  // meningen med dem.
+  const code = generateCode(input.prefix ?? (plan === "developer" ? "RHAP-DEV" : "RHAP"));
   return prisma.accessCode.create({
     data: {
       code,
-      plan:           input.plan ?? "pro",
-      durationDays:   input.durationDays ?? null,
+      plan,
+      durationDays:   plan === "developer" ? null : (input.durationDays ?? null),
       maxRedemptions: input.maxRedemptions ?? 1,
       note:           input.note ?? null,
       expiresAt: input.expiresInDays

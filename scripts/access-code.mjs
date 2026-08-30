@@ -18,6 +18,7 @@
 //                              i RHAPSODE_DEVELOPER_USER_IDS.
 //
 //   new [flaggor]              Skapa en kod.
+//       --dev                  Utvecklarkod: Pro på livstid + DEV-markör
 //       --uses <n>             Antal inlösen (standard 1)
 //       --days <n>             Hur länge Pro gäller efter inlösen
 //                              (utelämnas = tills vidare)
@@ -80,12 +81,18 @@ async function whoami() {
 }
 
 async function create(args) {
+  // --dev ger en kod som gor kontot till ett utvecklarkonto: Pro pa
+  // livstid, och DEV-markoren uppe till hoger. Losas in under
+  // Settings -> Subscription som vilken annan kod som helst.
+  const dev = args.includes("--dev");
+  const plan = dev ? "developer" : "pro";
+
   const code = await prisma.accessCode.create({
     data: {
-      code:           generateCode(flag(args, "prefix", "RHAP")),
-      plan:           "pro",
+      code:           generateCode(flag(args, "prefix", dev ? "RHAP-DEV" : "RHAP")),
+      plan,
       maxRedemptions: int(flag(args, "uses"), 1),
-      durationDays:   flag(args, "days") ? int(flag(args, "days"), null) : null,
+      durationDays:   dev ? null : (flag(args, "days") ? int(flag(args, "days"), null) : null),
       note:           flag(args, "note", null),
       expiresAt: flag(args, "expires")
         ? new Date(Date.now() + int(flag(args, "expires"), 30) * 86_400_000)
@@ -94,7 +101,7 @@ async function create(args) {
   });
 
   console.log(`\n  ${code.code}\n`);
-  console.log(`  Pro · ${code.maxRedemptions} redemption(s) · ${
+  console.log(`  ${code.plan === "developer" ? "DEVELOPER — Pro for life, DEV marker shown" : "Pro"} · ${code.maxRedemptions} redemption(s) · ${
     code.durationDays ? `${code.durationDays} days once claimed` : "no end date"
   }`);
   if (code.expiresAt) console.log(`  Claimable until ${code.expiresAt.toISOString().slice(0, 10)}`);
@@ -195,7 +202,7 @@ try {
       console.log(
         "\nUsage: node --env-file=.env scripts/access-code.mjs <command>\n\n" +
         "  whoami                     list users and their ids\n" +
-        "  new [--uses n] [--days n] [--expires n] [--note \"…\"]\n" +
+        "  new [--dev] [--uses n] [--days n] [--expires n] [--note \"…\"]\n" +
         "  list                       show every code\n" +
         "  revoke <code>              close a code and withdraw it\n" +
         "  grant <userId> [--days n]  give Pro directly\n"

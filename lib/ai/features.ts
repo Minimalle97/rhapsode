@@ -16,6 +16,7 @@ import { FEATURE, type Feature } from "@/lib/billing/plans";
 import type { ModelTier } from "./models";
 
 export type AiFeatureId =
+  | "text_cleanup"
   | "work_metadata"
   | "medal_title"
   | "recitation_analysis"
@@ -61,6 +62,25 @@ export interface AiFeatureSpec {
 }
 
 export const AI_FEATURES: Record<AiFeatureId, AiFeatureSpec> = {
+  // Djupstadning: kapitelgranser, strofform, upprepningar, PDF-skrap som
+  // inte foljer nagot monster. Kraver att nagon FORSTAR texten, till
+  // skillnad fran den gratis stadningen som bara ser monster.
+  //
+  // metered: false — den har en EGEN ranson (cleanup_month) i stallet for
+  // att ata av generationerna. Kostnaden loggas anda.
+  //
+  // Delbar: samma rafile ger samma stadning at alla.
+  text_cleanup: {
+    id: "text_cleanup",
+    requires: FEATURE.ADVANCED_CLEANUP,
+    tier: "standard",
+    promptVersion: 1,
+    metered: false,
+    shareable: true,
+    cacheTtlDays: 365,
+    degradesGracefully: false,
+  },
+
   // Katalogisering vid import. Strukturerad utvinning ur ett smakprov.
   // Delbar: samma Gutenberg-fil ger samma svar för alla.
   work_metadata: {

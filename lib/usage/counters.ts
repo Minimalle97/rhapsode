@@ -14,7 +14,12 @@
 
 import { prisma } from "@/lib/db";
 
-export type CounterScope = "ai_month" | "ai_burst" | "http_burst";
+export type CounterScope =
+  | "ai_month"
+  | "ai_burst"
+  | "http_burst"
+  /** Djupstadningar per manad. Egen ranson, skild fran generationerna. */
+  | "cleanup_month";
 
 export interface ConsumeResult {
   allowed:   boolean;

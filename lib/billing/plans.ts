@@ -41,6 +41,8 @@ export const FEATURE = {
   PERFORMANCE_ANALYSIS:"PERFORMANCE_ANALYSIS",
   ADVANCED_PROGRESS:   "ADVANCED_PROGRESS",
   PERSONALIZED_STUDY:  "PERSONALIZED_STUDY",
+  BASIC_CLEANUP:       "BASIC_CLEANUP",
+  ADVANCED_CLEANUP:    "ADVANCED_CLEANUP",
 } as const;
 
 export type Feature = (typeof FEATURE)[keyof typeof FEATURE];
@@ -53,6 +55,15 @@ export interface PlanLimits {
   aiBurstPerMinute: number;
   /** Antal egna verk. Infinity = obegränsat. */
   savedWorks: number;
+  /**
+   * Djupstädningar per månad.
+   *
+   * Egen räknare, skild från aiMonthly. Skälet är att den ska kunna ta
+   * slut UTAN att generationerna gör det: den som städat två texter ska
+   * fortfarande kunna göra sina övningar. Två gränser som tar slut
+   * tillsammans känns som en gräns som är för snäv.
+   */
+  advancedCleanupMonthly: number;
 }
 
 /** Miljövariabel som heltal, med ett värde att falla tillbaka på. */
@@ -68,11 +79,13 @@ export const LIMITS: Record<PlanId, PlanLimits> = {
     aiMonthly:        envInt("FREE_AI_MONTHLY_LIMIT", 5),
     aiBurstPerMinute: envInt("FREE_AI_BURST_PER_MINUTE", 3),
     savedWorks:       envInt("FREE_SAVED_WORKS_LIMIT", 3),
+    advancedCleanupMonthly: envInt("FREE_ADVANCED_CLEANUP_LIMIT", 2),
   },
   pro: {
     aiMonthly:        envInt("PRO_AI_MONTHLY_LIMIT", 100),
     aiBurstPerMinute: envInt("PRO_AI_BURST_PER_MINUTE", 10),
     savedWorks:       envInt("PRO_SAVED_WORKS_LIMIT", Number.MAX_SAFE_INTEGER),
+    advancedCleanupMonthly: envInt("PRO_ADVANCED_CLEANUP_LIMIT", Number.MAX_SAFE_INTEGER),
   },
 };
 
@@ -87,6 +100,12 @@ export const ENTITLEMENTS: Record<PlanId, readonly Feature[]> = {
     FEATURE.BASIC_RHYTHM,
     FEATURE.SAVED_CUSTOM_TEXTS, // begränsat av LIMITS.free.savedWorks
     FEATURE.AI_EXERCISES,       // begränsat av LIMITS.free.aiMonthly
+    FEATURE.BASIC_CLEANUP,      // obegränsat — det är bara aritmetik
+    // Free får två i månaden. Funktionen är alltså INTE låst; den tar
+    // slut. Skillnaden spelar roll: ett hänglås ber om pengar innan
+    // någon vet vad de köper, en förbrukad ranson ber om dem i det
+    // ögonblick de precis sett vad den gör.
+    FEATURE.ADVANCED_CLEANUP,
   ],
   pro: [
     FEATURE.BASIC_RECITATION,
@@ -101,6 +120,8 @@ export const ENTITLEMENTS: Record<PlanId, readonly Feature[]> = {
     FEATURE.PERFORMANCE_ANALYSIS,
     FEATURE.ADVANCED_PROGRESS,
     FEATURE.PERSONALIZED_STUDY,
+    FEATURE.BASIC_CLEANUP,
+    FEATURE.ADVANCED_CLEANUP,
   ],
 };
 
