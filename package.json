@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "verify": "tsc --noEmit && vitest run && next build",
     "codes": "node --env-file=.env scripts/access-code.mjs",
+    "handles:backfill": "node --env-file=.env scripts/backfill-handles.mjs",
     "stripe:verify": "node --env-file=.env scripts/stripe-setup.mjs verify",
     "stripe:apply": "node --env-file=.env scripts/stripe-setup.mjs apply",
     "hooks:install": "git config core.hooksPath .githooks"

@@ -19,6 +19,7 @@ import { getEntitlements } from "@/lib/billing/entitlements";
 import { masteryOf } from "@/lib/mastery";
 import { learningProgress } from "@/lib/performance";
 import { standingsForWorks } from "@/lib/performanceStore";
+import { duelBadgesForWorks } from "@/lib/duels";
 import { prisma } from "@/lib/db";
 import { buildWorkWhere, getDistinctTags, hasActiveFilters } from "@/lib/works";
 import { WorkCard } from "@/components/library/WorkCard";
@@ -76,8 +77,14 @@ export default async function LibraryPage({ searchParams }: Props) {
     }),
   ]);
 
-  // En fraga for alla verk, inte en per kort.
-  const standings = await standingsForWorks(user.id, works.map(w => w.id));
+  // En fraga for alla verk, inte en per kort. Detsamma galler tvekamperna:
+  // biblioteket kan innehalla hundra verk och far inte stalla hundra
+  // fragor for att veta vilka tva som har en gron ram.
+  const workIds = works.map(w => w.id);
+  const [standings, duelBadges] = await Promise.all([
+    standingsForWorks(user.id, workIds),
+    duelBadgesForWorks(user.id, workIds),
+  ]);
 
   const progressByWork = new Map<string, number>(
     works.map(w => [
@@ -154,6 +161,10 @@ export default async function LibraryPage({ searchParams }: Props) {
               progress={progressByWork.get(work.id) ?? 0}
               performanceMastered={standings.get(work.id)?.isMastered ?? false}
               masteryAtRisk={standings.get(work.id)?.standing === "at_risk"}
+              duel={(() => {
+                const d = duelBadges.get(work.id);
+                return d ? { endsAt: d.endsAt.toISOString(), opponentName: d.opponentName } : null;
+              })()}
             />
           ))}
         </div>

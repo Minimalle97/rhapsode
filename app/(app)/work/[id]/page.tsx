@@ -24,6 +24,8 @@ import { standingForWork } from "@/lib/performanceStore";
 import { WorkVisibility } from "@/components/library/WorkVisibility";
 import { getEntitlements } from "@/lib/billing/entitlements";
 import { UpgradeCard } from "@/components/billing/UpgradeCard";
+import { DuelBanner } from "@/components/duels/DuelBanner";
+import { duelForWork } from "@/lib/duels";
 import type { Metadata } from "next";
 
 // Hämta alltid färsk data — annars kan sidan visa läget före
@@ -89,6 +91,10 @@ export default async function WorkPage({ params, searchParams }: Props) {
   const learned = learningProgress(levelRows.map(masteryOf));
   const ent = await getEntitlements(user);
 
+  // Star verket i en tvekamp far klockan sta overst. Den ar tidsbunden och
+  // allt annat pa sidan ar det inte.
+  const duel = await duelForWork(user.id, id);
+
   const now = new Date();
 
   const [parts, statusRows, dueCount, nextSection] = await Promise.all([
@@ -148,6 +154,22 @@ export default async function WorkPage({ params, searchParams }: Props) {
   return (
     <div style={{ maxWidth: "820px", margin: "0 auto", padding: "36px 24px 80px" }}>
       <Link href="/library" style={backLink}>← Library</Link>
+
+      {duel?.status === "active" && duel.endsAt && (
+        <DuelBanner
+          duelId={duel.id}
+          workTitle={duel.workTitle}
+          endsAt={duel.endsAt.toISOString()}
+          opponentName={
+            duel.challengerId === user.id ? duel.opponent.username : duel.challenger.username
+          }
+          viewerId={user.id}
+          // Sant bara nar personens EGEN plan ar gratis. Da ar redskapen
+          // lanade av kampen, och det ska sagas rakt ut — bade for att det
+          // ar arligt och for att det ar det som saljer Pro.
+          toolsOnLoan={!ent.isPro}
+        />
+      )}
 
       <header style={{ marginBottom: "26px" }}>
         <p style={eyebrow}>{work.type}</p>

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FriendCard } from "@/lib/friends";
 import { PostFeed, type FeedPost } from "./PostFeed";
+import { DuelInbox } from "@/components/duels/DuelInbox";
 
 interface Data {
   friends:  FriendCard[];
@@ -153,6 +154,13 @@ export function FriendsHub() {
           </div>
         </section>
       )}
+
+      {/*
+        Tvekamperna. Star fore flodet: en inbjudan vantar pa ett svar och
+        en pagaende kamp har en klocka som gar, medan ett inlagg kan lasas
+        nar som helst. Det som ar tidsbundet hor hogst upp.
+      */}
+      <DuelInbox viewerId={data.me.id} />
 
       {/* Flodet */}
       {feed && data.friends.length > 0 && (

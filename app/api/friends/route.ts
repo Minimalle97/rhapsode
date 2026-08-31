@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { listFriends, incomingRequests, outgoingRequests } from "@/lib/friends";
+import { listFriends, incomingRequests, outgoingRequests, resolveHandle } from "@/lib/friends";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +46,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No handle given" }, { status: 400 });
     }
 
-    const target = await prisma.user.findUnique({
-      // Uppslagning pa gemener sa att @Casper och @casper hittar samma
-      // person. Visningsformen kommer tillbaka i select.
-      where:  { handleLower: clean.toLowerCase() },
+    // Uppslagning pa gemener sa att @Casper och @casper hittar samma
+    // person. resolveHandle tacker ocksa de rader dar handleLower annu
+    // ar tom — utan den svarade den har routen "No one goes by @..." om
+    // ett handtag som stod mitt framfor en i vanlistan.
+    const targetId = await resolveHandle(clean);
+    const target = targetId && await prisma.user.findUnique({
+      where:  { id: targetId },
       select: { id: true, username: true, handle: true },
     });
 

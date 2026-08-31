@@ -28,6 +28,7 @@ import { FEATURE } from "@/lib/billing/plans";
 import { runAi } from "@/lib/ai/run";
 import { asDocument, parseJsonBlock, UNTRUSTED_INPUT_RULE } from "@/lib/anthropic";
 import { accuracyPercent } from "@/lib/mastery";
+import { duelEntitlementsForSection } from "@/lib/duels";
 
 const CUES: CueLevel[] = ["full", "firstWord", "initials", "skeleton", "hidden"];
 
@@ -39,7 +40,7 @@ interface Analysis {
 
 export async function POST(req: NextRequest) {
   try {
-    const { user, ent } = await session();
+    const { user, ent: planEnt } = await session();
 
     const limited = await rateLimit(`grade:${user.id}`, 40);
     if (limited) return limited;
@@ -59,6 +60,12 @@ export async function POST(req: NextRequest) {
       select: { id: true, name: true, content: true, work: { select: { title: true, author: true } } },
     });
     if (!section) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Star sektionens verk i en pagaende tvekamp galler kampens
+    // behorigheter, inte kontots. Bada sidor far samma redskap sa lange
+    // klockan gar — se lib/duels.ts. Utanfor en kamp ar detta samma
+    // objekt som session() gav, och kostar en fraga som aldrig stalls.
+    const ent = await duelEntitlementsForSection(user.id, planEnt, section.id);
 
     // ── Det deterministiska lagret. Gäller alla, kostar ingenting. ────
     const graded  = gradeAttempt(section.content, attempt);

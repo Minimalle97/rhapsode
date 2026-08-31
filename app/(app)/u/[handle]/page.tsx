@@ -13,11 +13,13 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { friendState } from "@/lib/friends";
+import { friendState, resolveHandle } from "@/lib/friends";
 import { sharedLibrary } from "@/lib/sharedLibrary";
 import { postsBy, canSeePosts } from "@/lib/posts";
 import { getRank, getNextRank } from "@/lib/xp";
+import { getEntitlements } from "@/lib/billing/entitlements";
 import { FriendButton } from "@/components/friends/FriendButton";
+import { DuelInvite } from "@/components/duels/DuelInvite";
 import { SharedWorks } from "@/components/friends/SharedWorks";
 import { PostFeed } from "@/components/friends/PostFeed";
 import type { Metadata } from "next";
@@ -30,10 +32,10 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
-  const u = await prisma.user.findUnique({
-    where: { handleLower: handle.toLowerCase() },
-    select: { username: true },
-  });
+  const id = await resolveHandle(handle);
+  const u = id
+    ? await prisma.user.findUnique({ where: { id }, select: { username: true } })
+    : null;
   return { title: u?.username ?? "Profile" };
 }
 
@@ -41,8 +43,14 @@ export default async function PublicProfile({ params }: Props) {
   const { handle } = await params;
   const viewer = await requireUser();
 
+  // Handtaget slas upp via resolveHandle, inte direkt mot handleLower.
+  // Skalet star i lib/friends.ts: kolumnen ar tom i alla rader som fanns
+  // innan den infordes, och utan reservvagen ger varje van "Nothing here".
+  const personId = await resolveHandle(handle);
+  if (!personId) notFound();
+
   const person = await prisma.user.findUnique({
-    where: { handleLower: handle.toLowerCase() },
+    where: { id: personId },
     select: {
       id: true, handle: true, username: true, avatarUrl: true, bio: true,
       xp: true, rank: true, streakDays: true, createdAt: true,
@@ -64,6 +72,11 @@ export default async function PublicProfile({ params }: Props) {
 
   const { state, friendshipId } = await friendState(viewer.id, person.id);
   const isFriend = state === "friends" || state === "self";
+
+  // Vem som far bjuda in avgors av planen. Knappen ritas anda for alla
+  // vanner — se DuelInvite: ett hanglas som beratter vad som ligger bakom
+  // ar arligare an en knapp som inte finns. Servern kontrollerar igen.
+  const ent = await getEntitlements(viewer);
 
   const rank     = getRank(person.xp);
   const next     = getNextRank(person.xp);
@@ -139,6 +152,19 @@ export default async function PublicProfile({ params }: Props) {
               username={person.username}
             />
           )}
+
+          {/*
+            Tvekampen erbjuds bara mellan vanner. Att kunna skicka en text
+            till nagon man inte kanner ar ett satt att skicka vad som helst
+            till nagon man inte kanner — samma regel galler i lib/duels.ts.
+          */}
+          {state === "friends" && (
+            <DuelInvite
+              opponentId={person.id}
+              opponentName={person.username}
+              canInvite={ent.isPro}
+            />
+          )}
         </div>
       </div>
 
@@ -198,27 +224,35 @@ export default async function PublicProfile({ params }: Props) {
         <p style={empty}>No medals yet.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "26px" }}>
-          {person.medals.map(m => (
+          {person.medals.map(m => {
+            // Tvekampsmedaljen ar gron och bar svard, precis som i
+            // MedalCard. Samma sort ska se likadan ut var den an star.
+            const battle = m.kind === "battle";
+            return (
             <div key={m.id} style={{
-              background: "var(--bg2)", border: "1px solid var(--bord)",
+              background: "var(--bg2)",
+              border: `1px solid ${battle ? "rgba(106,158,106,0.32)" : "var(--bord)"}`,
               borderRadius: "var(--r2)", padding: "13px 16px",
               display: "flex", gap: "13px", alignItems: "center",
             }}>
               <span style={{
                 width: "34px", height: "34px", borderRadius: "50%",
-                border: "1px solid rgba(200,164,80,0.35)", background: "var(--gold4)",
+                border: `1px solid ${battle ? "rgba(106,158,106,0.42)" : "rgba(200,164,80,0.35)"}`,
+                background: battle ? "rgba(106,158,106,0.09)" : "var(--gold4)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "14px", color: "var(--gold)", flexShrink: 0,
+                fontSize: "14px", color: battle ? "var(--green)" : "var(--gold)", flexShrink: 0,
               }}>
-                ✦
+                {battle ? "⚔" : "✦"}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontFamily: "var(--fd)", fontSize: "15px", color: "var(--parch)" }}>
                   {m.work.visibility === "public"
                     ? m.title
-                    : m.kind === "performance"
-                      ? "Performed from memory"
-                      : "A work held entire"}
+                    : battle
+                      ? "Won a duel"
+                      : m.kind === "performance"
+                        ? "Performed from memory"
+                        : "A work held entire"}
                 </p>
                 <p style={{ fontSize: "11px", color: "var(--muted)" }}>
                   {m.work.visibility === "public"
@@ -227,7 +261,8 @@ export default async function PublicProfile({ params }: Props) {
                 </p>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -11,13 +11,14 @@ import { session, toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
 import { runAi } from "@/lib/ai/run";
 import { asDocument, UNTRUSTED_INPUT_RULE } from "@/lib/anthropic";
+import { duelEntitlements } from "@/lib/duels";
 
 const MAX_TURNS = 12;
 const MAX_CHARS = 2_000;
 
 export async function POST(req: NextRequest) {
   try {
-    const { user, ent } = await session();
+    const { user, ent: planEnt } = await session();
 
     const body = await req.json().catch(() => ({}));
     const mode: string = body.mode === "coach" ? "coach" : "scholar";
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
       select: { title: true, author: true, type: true },
     });
     if (!work) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Samma regel som vid rattningen: en tvekamp lanar ut sina redskap
+    // till bada sidor, pa det verk kampen galler och inget annat.
+    const ent = await duelEntitlements(user.id, planEnt, workId);
 
     const history: { role: "user" | "assistant"; content: string }[] =
       Array.isArray(body.history) ? body.history.slice(-MAX_TURNS) : [];

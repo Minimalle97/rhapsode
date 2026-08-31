@@ -181,3 +181,55 @@ export function validateHandle(input: string): {
   return { ok: true, handle, lower };
 }
 
+
+// ── Uppslagning ───────────────────────────────────────────────────────
+
+/**
+ * Anvandar-id:t bakom ett handtag, eller null.
+ *
+ * RATTAT: att klicka pa en van gav "Nothing here".
+ *
+ * Unikheten flyttades till `handleLower` i samma andring som infarde
+ * versaler i visningsformen. Kolumnen las dock aldrig tillbaka i de rader
+ * som redan fanns — de hade `handle` satt och `handleLower` tom. Varje
+ * uppslagning gick mot den tomma kolumnen, sa /u/<handle> hittade ingen
+ * och `notFound()` slog till. Samma sak gjorde att en vanforfragan till
+ * ett befintligt handtag svarade "No one goes by @...".
+ *
+ * Har ligger darfor bade det normala fallet och reservvagen: hittas
+ * ingenting pa `handleLower` provas `handle` utan hansyn till versaler,
+ * och traffas nagon skrivs kolumnen samtidigt i ordning. Raden lakes en
+ * gang och gar sedan den snabba vagen for all framtid.
+ *
+ * scripts/backfill-handles.mjs gor samma sak for hela tabellen pa en
+ * gang. Reservvagen finns anda kvar — den kostar ingenting nar kolumnen
+ * ar ifylld, och den ar det som gor att ett glomt skript inte ater tar
+ * ned funktionen.
+ */
+export async function resolveHandle(input: string): Promise<string | null> {
+  const lower = String(input ?? "").trim().replace(/^@/, "").toLowerCase();
+  if (!lower) return null;
+
+  const exact = await prisma.user.findUnique({
+    where:  { handleLower: lower },
+    select: { id: true },
+  });
+  if (exact) return exact.id;
+
+  const legacy = await prisma.user.findFirst({
+    where:  { handleLower: null, handle: { equals: lower, mode: "insensitive" } },
+    select: { id: true, handle: true },
+  });
+  if (!legacy?.handle) return null;
+
+  // Lak raden. Misslyckas det — nagon annan hann ta gemenformen — ar
+  // traffen anda giltig, sa uppslagningen far inte falla pa skrivningen.
+  await prisma.user
+    .update({
+      where: { id: legacy.id },
+      data:  { handleLower: legacy.handle.toLowerCase() },
+    })
+    .catch(() => {});
+
+  return legacy.id;
+}

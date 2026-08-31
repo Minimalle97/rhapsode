@@ -6,6 +6,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { AddToCollectionMenu } from "./AddToCollectionMenu";
+import { DuelBadge, DUEL_BORDER } from "@/components/duels/DuelBadge";
 import type { Collection } from "@/types";
 
 interface WorkCardWork {
@@ -28,11 +29,13 @@ interface WorkCardProps {
   performanceMastered:  boolean;
   /** Bemastrad men inte framford pa ett tag. */
   masteryAtRisk:        boolean;
+  /** Satt nar verket star i en tvekamp. Ger den grona ramen och bubblan. */
+  duel?:                { endsAt: string; opponentName: string } | null;
 }
 
 export function WorkCard({
   work, collections, memberCollectionIds, activeTag,
-  progress, performanceMastered, masteryAtRisk,
+  progress, performanceMastered, masteryAtRisk, duel = null,
 }: WorkCardProps) {
   const total    = work.sections.length;
   const mastered = work.sections.filter(
@@ -42,8 +45,12 @@ export function WorkCard({
 
   // Rod ram = mastartiteln galler. Den ar avsiktligt den enda roda saken i
   // biblioteket, sa att den betyder nagot pa avstand.
-  const border = performanceMastered ? "var(--red)" : "var(--bord)";
-  const hover  = performanceMastered ? "var(--red)" : "rgba(200,164,80,0.3)";
+  //
+  // Gron ram = tvekamp, och den star over den roda sa lange klockan gar.
+  // Skalet ar att den ar tillfallig och tidsbunden: mastartiteln star
+  // kvar imorgon, kampen gor det inte, sa det ar den som behover synas nu.
+  const border = duel ? DUEL_BORDER : performanceMastered ? "var(--red)" : "var(--bord)";
+  const hover  = duel ? DUEL_BORDER : performanceMastered ? "var(--red)" : "rgba(200,164,80,0.3)";
 
   return (
     <div style={{ position: "relative" }}>
@@ -53,7 +60,13 @@ export function WorkCard({
           onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = hover)}
           onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = border)}
         >
-          <p style={typeLabelStyle}>{work.type}</p>
+          <div style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            flexWrap: "wrap", marginBottom: "6px", paddingRight: "30px",
+          }}>
+            <p style={typeLabelStyle}>{work.type}</p>
+            {duel && <DuelBadge endsAt={duel.endsAt} />}
+          </div>
 
           <h3 style={titleStyle}>{work.title}</h3>
           <p style={authorStyle}>{work.author}</p>
@@ -131,8 +144,8 @@ const typeLabelStyle: CSSProperties = {
   letterSpacing: "0.2em",
   color:         "var(--gold)",
   textTransform: "uppercase",
-  marginBottom:  "6px",
-  paddingRight:  "30px", // lämnar plats för ⋯-menyn
+  // Marginal och luft for ⋯-menyn ligger nu pa raden som haller bade den
+  // har etiketten och tvekampsbubblan.
 };
 
 const titleStyle: CSSProperties = {
