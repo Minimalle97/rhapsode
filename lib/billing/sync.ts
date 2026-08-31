@@ -172,6 +172,53 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<string> {
       return "invoice paid";
     }
 
+    // Fakturan gick inte att faststalla.
+    //
+    // Det har blir mojligt forst nar Stripe Tax ar paslaget, och det ar
+    // ett tyst fel av varsta sorten: kan Stripe inte rakna fram momsen
+    // faststalls ingen faktura, ingen betalning forsoks, och INGET
+    // invoice.payment_failed skickas. Prenumerationen star kvar som
+    // active, kunden behaller Pro, och ingen betalar. Utan det har fallet
+    // upptacks det forst nar nagon jamfor intakter mot antal kunder.
+    //
+    // Vanligaste orsaken ar requires_location_inputs: adressen racker
+    // inte for att avgora vilket lands sats som galler. Det gar inte att
+    // laga har — kunden maste fylla i den — sa raden loggas och markeras
+    // for uppfoljning i stallet for att tyst passera.
+    case "invoice.finalization_failed": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId = typeof invoice.customer === "string"
+        ? invoice.customer
+        : invoice.customer?.id;
+
+      const taxStatus =
+        (invoice as unknown as { automatic_tax?: { status?: string } })
+          .automatic_tax?.status ?? null;
+
+      if (customerId) {
+        const user = await prisma.user.findUnique({
+          where:  { stripeCustomerId: customerId },
+          select: { id: true },
+        });
+        if (user) {
+          await track("tax_calculation_failed", user.id, {
+            reason:  taxStatus,
+            invoice: invoice.id ?? null,
+          });
+        }
+      }
+
+      // Loggas alltid, aven nar kunden inte gar att hitta — en faktura som
+      // inte kan faststallas ar nagot nagon behover titta pa.
+      console.error(
+        `Invoice ${invoice.id} could not be finalized. ` +
+        `automatic_tax.status=${taxStatus ?? "unknown"}. ` +
+        `No payment was attempted.`
+      );
+
+      return `finalization failed (${taxStatus ?? "unknown"})`;
+    }
+
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
       const customerId = typeof invoice.customer === "string"

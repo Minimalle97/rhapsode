@@ -6,12 +6,13 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FriendCard } from "@/lib/friends";
+import { PostFeed, type FeedPost } from "./PostFeed";
 
 interface Data {
   friends:  FriendCard[];
   incoming: FriendCard[];
   outgoing: FriendCard[];
-  me:       { handle: string | null; username: string };
+  me:       { id: string; handle: string | null; username: string; avatarUrl: string | null };
 }
 
 export function FriendsHub() {
@@ -22,6 +23,7 @@ export function FriendsHub() {
   const [error, setError]   = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [feed, setFeed]     = useState<FeedPost[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -35,6 +37,18 @@ export function FriendsHub() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Flodet hamtas for sig. Gar det fel ar vanlistan anda kvar — den ar
+  // sidans uppgift, flodet ar en bonus, och de ska inte falla ihop.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res  = await fetch("/api/posts");
+        const json = await res.json();
+        if (res.ok) setFeed(json.posts);
+      } catch { /* tyst */ }
+    })();
+  }, []);
 
   async function act(fn: () => Promise<Response>, success?: string) {
     setBusy(true);
@@ -137,6 +151,19 @@ export function FriendsHub() {
               </Row>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Flodet */}
+      {feed && data.friends.length > 0 && (
+        <section style={{ marginTop: "28px" }}>
+          <h2 style={h2}>Latest</h2>
+          <PostFeed
+            initial={feed}
+            viewer={data.me}
+            canWrite
+            empty="Nothing yet. Say something, or master a work and it writes itself."
+          />
         </section>
       )}
 

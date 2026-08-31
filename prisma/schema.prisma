@@ -12,16 +12,25 @@ datasource db {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  clerkId    String   @unique
-  username   String
-  handle     String?  @unique
-  avatarUrl  String?
-  xp         Int      @default(0)
-  rank       String   @default("The Uninitiated")
-  streakDays Int      @default(0)
-  lastActive DateTime @default(now())
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  clerkId     String   @unique
+  username    String
+  /// Handtaget som anvandaren skrev det, med versaler bevarade.
+  handle      String?
+  /// Samma handtag i gemener. Det ar HAR unikheten sitter.
+  ///
+  /// Skalet: "Casper" och "casper" far inte kunna vara tva olika konton.
+  /// Med unikhet pa visningsformen hade nagon kunnat registrera en
+  /// versalvariant av ett befintligt namn och passera som den personen.
+  handleLower String?  @unique
+  /// Nagra rader om sig sjalv, synligt for vanner. Ren text.
+  bio         String?
+  avatarUrl   String?
+  xp          Int      @default(0)
+  rank        String   @default("The Uninitiated")
+  streakDays  Int      @default(0)
+  lastActive  DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   // ── Prenumeration ────────────────────────────────────────────────
   // Sanningen om vad någon får göra bor HÄR, på servern. Klienten får
@@ -47,6 +56,8 @@ model User {
 
   sentRequests     Friendship[] @relation("requester")
   receivedRequests Friendship[] @relation("addressee")
+  posts            Post[]
+  postLikes        PostLike[]
 }
 
 // Vänskap: en rad per relation, oavsett riktning.
@@ -90,6 +101,7 @@ model Work {
   medals       Medal[]
   collections  CollectionWork[]
   performances Performance[]
+  posts        Post[]
 
   @@index([userId])
 }
@@ -421,4 +433,56 @@ model StudySession {
 
   @@index([userId, createdAt])
   @@index([workId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// VANNER: inlagg och gillningar
+// ─────────────────────────────────────────────────────────────────────
+
+/// Ett inlagg pa nagons profil.
+///
+/// Tva sorter, med flit atskilda:
+///
+///   milestone — appen skriver det sjalv nar nagot hant ("bemastrade
+///               Invictus"). Verket lankas, och DA maste det vara
+///               publikt for att namnges.
+///   note      — nagot man skrivit sjalv.
+///
+/// Skillnaden spelar roll for vad som gar att lita pa: en milstolpe ar
+/// bevisad av appen, en anteckning ar bara ett pastaende.
+model Post {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind String @default("note") // note | milestone
+  body String
+
+  /// Satt for milstolpar. Verket namnges bara om det ar publikt.
+  ///
+  /// SetNull, inte Cascade: raderar man verket ska minnet av att man en
+  /// gang kunde det inte forsvinna ur floden dar vanner redan sett det.
+  workId String?
+  work   Work?   @relation(fields: [workId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  likes PostLike[]
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+/// En gillning. Unik per person och inlagg — man gillar en gang.
+model PostLike {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId])
 }

@@ -154,21 +154,30 @@ const RESERVED = new Set([
 ]);
 
 export function validateHandle(input: string): {
-  ok: boolean; handle: string; error?: string;
+  ok: boolean; handle: string; lower: string; error?: string;
 } {
-  const handle = input.trim().toLowerCase().replace(/^@/, "");
+  // RATTAT: handtaget tvingades till gemener, sa "Casper" blev "casper"
+  // och det gick inte att skriva sitt namn som man stavar det.
+  //
+  // Versaler bevaras nu i `handle`, som ar det som VISAS. Unikheten och
+  // alla uppslagningar gar mot `lower`. Det ar den delningen som gor att
+  // versaler kan tillatas utan att "Casper" och "casper" blir tva konton
+  // — vilket vore ett satt att utge sig for att vara nagon annan.
+  const handle = input.trim().replace(/^@/, "");
+  const lower  = handle.toLowerCase();
 
-  if (handle.length < 3)  return { ok: false, handle, error: "At least 3 characters." };
-  if (handle.length > 20) return { ok: false, handle, error: "At most 20 characters." };
-  if (!/^[a-z0-9_]+$/.test(handle)) {
-    return { ok: false, handle, error: "Letters, numbers and underscores only." };
+  if (handle.length < 3)  return { ok: false, handle, lower, error: "At least 3 characters." };
+  if (handle.length > 20) return { ok: false, handle, lower, error: "At most 20 characters." };
+  if (!/^[A-Za-z0-9_]+$/.test(handle)) {
+    return { ok: false, handle, lower, error: "Letters, numbers and underscores only." };
   }
   if (/^\d+$/.test(handle)) {
-    return { ok: false, handle, error: "Can't be only numbers." };
+    return { ok: false, handle, lower, error: "Can't be only numbers." };
   }
-  if (RESERVED.has(handle)) {
-    return { ok: false, handle, error: "That one is taken by the app itself." };
+  if (RESERVED.has(lower)) {
+    return { ok: false, handle, lower, error: "That one is taken by the app itself." };
   }
 
-  return { ok: true, handle };
+  return { ok: true, handle, lower };
 }
+

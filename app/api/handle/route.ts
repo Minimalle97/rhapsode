@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     }
 
     const taken = await prisma.user.findUnique({
-      where:  { handle: check.handle },
+      where:  { handleLower: check.lower },
       select: { id: true },
     });
 
@@ -50,7 +50,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const taken = await prisma.user.findUnique({
-      where:  { handle: check.handle },
+      where:  { handleLower: check.lower },
       select: { id: true },
     });
     if (taken && taken.id !== user.id) {
@@ -59,7 +59,8 @@ export async function PATCH(req: NextRequest) {
 
     await prisma.user.update({
       where: { id: user.id },
-      data:  { handle: check.handle },
+      // handle ar visningsformen, handleLower ar den som ar unik.
+      data:  { handle: check.handle, handleLower: check.lower },
     });
 
     return NextResponse.json({ handle: check.handle });

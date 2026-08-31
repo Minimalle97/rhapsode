@@ -1,7 +1,24 @@
 "use client";
 // components/profile/AvatarUpload.tsx
+//
+// Profilbilden.
+//
+// ── RÄTTAT: två bilder för samma person ───────────────────────────────
+//
+// Komponenten laddade tidigare upp en egen bild till Supabase, medan
+// UserButton uppe till höger visade Clerks bild. Bytte man den ena
+// ändrades inte den andra, så "Manage account" och profilsidan visade
+// olika ansikten för samma konto.
+//
+// Nu äger Clerk bilden, och lib/auth.ts speglar den vid varje inloggning.
+// Det går inte längre att glida isär, för det finns bara en bild.
+//
+// Följden är att uppladdningen sker i Clerks egen ruta i stället för
+// här. Det är inte en förlust — den rutan gör samma sak, beskär bilden
+// bättre, och är ett ställe färre där en fil kan laddas upp till oss.
 
-import { useRef, useState, useTransition } from "react";
+import { useClerk } from "@clerk/nextjs";
+import type { CSSProperties } from "react";
 
 interface AvatarUploadProps {
   username:  string;
@@ -9,117 +26,64 @@ interface AvatarUploadProps {
 }
 
 export function AvatarUpload({ username, avatarUrl }: AvatarUploadProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  const displayUrl = preview ?? avatarUrl;
-
-  function handleClick() {
-    inputRef.current?.click();
-  }
-
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setError("Only image files are allowed.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setError("Image must be under 2 MB.");
-      return;
-    }
-
-    setError(null);
-    const objectUrl = URL.createObjectURL(file);
-    setPreview(objectUrl);
-
-    startTransition(async () => {
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const res = await fetch("/api/avatar", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error ?? "Upload failed");
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Upload failed");
-        setPreview(null);
-      }
-    });
-  }
-
-  const initials = username[0]?.toUpperCase() ?? "?";
+  const { openUserProfile } = useClerk();
 
   return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      <button
-        onClick={handleClick}
-        disabled={isPending}
-        title="Change avatar"
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: "50%",
-          border: "1px solid var(--bord)",
-          background: "var(--bg3)",
-          cursor: isPending ? "wait" : "pointer",
-          padding: 0,
-          overflow: "hidden",
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {displayUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={displayUrl}
-            alt={username}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        ) : (
-          <span style={{ fontFamily: "var(--fd)", fontSize: "26px", color: "var(--gold)", lineHeight: 1 }}>
-            {initials}
-          </span>
-        )}
-      </button>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={handleFile}
-      />
-
-      {error && (
-        <p style={{
-          position: "absolute",
-          top: "calc(100% + 6px)",
-          left: "50%",
-          transform: "translateX(-50%)",
-          fontSize: "11px",
-          color: "var(--red)",
-          whiteSpace: "nowrap",
-          background: "var(--bg2)",
-          padding: "4px 8px",
-          borderRadius: "var(--r3)",
-          border: "1px solid var(--bord)",
-        }}>
-          {error}
-        </p>
+    <button
+      type="button"
+      onClick={() => openUserProfile()}
+      title="Change your picture"
+      style={wrap}
+    >
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatarUrl} alt="" style={image} />
+      ) : (
+        <span style={initial}>{username.trim().charAt(0).toUpperCase() || "?"}</span>
       )}
-    </div>
+
+      <span style={hint}>Change</span>
+    </button>
   );
 }
+
+const wrap: CSSProperties = {
+  position:     "relative",
+  width:        "82px",
+  height:       "82px",
+  borderRadius: "50%",
+  border:       "1px solid var(--bord)",
+  background:   "var(--bg3)",
+  padding:      0,
+  cursor:       "pointer",
+  overflow:     "hidden",
+  flexShrink:   0,
+};
+
+const image: CSSProperties = {
+  width: "100%", height: "100%", objectFit: "cover", display: "block",
+};
+
+const initial: CSSProperties = {
+  display:        "flex",
+  alignItems:     "center",
+  justifyContent: "center",
+  width:          "100%",
+  height:         "100%",
+  fontFamily:     "var(--fd)",
+  fontSize:       "32px",
+  color:          "var(--gold)",
+};
+
+const hint: CSSProperties = {
+  position:   "absolute",
+  left:       0,
+  right:      0,
+  bottom:     0,
+  padding:    "3px 0",
+  fontSize:   "9.5px",
+  letterSpacing: "0.14em",
+  textTransform: "uppercase",
+  color:      "var(--parch)",
+  background: "rgba(12,16,21,0.78)",
+};

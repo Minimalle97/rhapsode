@@ -15,6 +15,9 @@ import { MedalCard } from "@/components/medals/MedalCard";
 import { RankBar } from "@/components/rank/RankBar";
 import { AvatarUpload } from "@/components/profile/AvatarUpload";
 import { UsernameEdit } from "@/components/profile/UsernameEdit";
+import { BioEditor } from "@/components/profile/BioEditor";
+import { PostFeed } from "@/components/friends/PostFeed";
+import { postsBy } from "@/lib/posts";
 import { BackupPanel } from "@/components/sync/BackupPanel";
 
 export default async function ProfilePage() {
@@ -22,7 +25,7 @@ export default async function ProfilePage() {
   const ent  = await getEntitlements(user);
   const allowance = await aiAllowance(user.id, ent);
 
-  const [medals, works] = await Promise.all([
+  const [medals, works, posts] = await Promise.all([
     prisma.medal.findMany({
       where:   { userId: user.id },
       include: { work: { select: { title: true, author: true, type: true, visibility: true } } },
@@ -33,6 +36,7 @@ export default async function ProfilePage() {
       // Bara status — sidan räknar bara, den läser aldrig texten
       select: { id: true, sections: { select: { status: true } } },
     }),
+    postsBy(user.id, user.id),
   ]);
 
   const rank     = getRank(user.xp);
@@ -73,6 +77,13 @@ export default async function ProfilePage() {
           </p>
         </div>
       </div>
+
+      {/*
+        Beskrivningen star hogst upp, dar man laser den. Den ar det enda
+        pa sidan som vanner ser och man sjalv skriver — resten ar sadant
+        appen raknat fram.
+      */}
+      <BioEditor initial={user.bio} />
 
       {/*
         Planen syns som en rad, inte som en märkning. Free ska inte känna
@@ -146,7 +157,14 @@ export default async function ProfilePage() {
         utveckling, och den ar analys snarare an framsteg.
       */}
       {canUseFeature(ent, FEATURE.ADVANCED_PROGRESS) ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "36px" }}>
+        <div style={{
+          display: "grid",
+          // auto-fit i stallet for tre fasta spalter: pa en smal telefon
+          // blir det tva rutor i bredd, och siffran far plats i stallet
+          // for att brytas mitt itu.
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: "12px", marginBottom: "36px",
+        }}>
           <StatTile label="Works"    value={works.length} />
           <StatTile label="Sections" value={totalSections} />
           <StatTile label="Mastered" value={masteredSections} accent />
@@ -201,6 +219,27 @@ export default async function ProfilePage() {
           ))}
         </div>
       )}
+
+      {/* ── Posts ── */}
+      <div style={{ marginBottom: "12px" }}>
+        <h2 style={{ fontFamily: "var(--fd)", fontSize: "22px", fontWeight: 300, color: "var(--parch)", letterSpacing: "0.06em" }}>
+          Posts
+        </h2>
+        <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>
+          Your friends see these. No one else does.
+        </p>
+      </div>
+      <div style={{ marginBottom: "36px" }}>
+        <PostFeed
+          initial={posts.map(p => ({ ...p, createdAt: p.createdAt.toISOString() }))}
+          viewer={{
+            id: user.id, username: user.username,
+            handle: user.handle, avatarUrl: user.avatarUrl,
+          }}
+          canWrite
+          empty="Nothing posted yet."
+        />
+      </div>
 
       {/* ── Backup & Restore ── */}
       <BackupPanel />

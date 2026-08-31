@@ -22,6 +22,22 @@ const JPEG = bytes(0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0);
 const GIF  = bytes(0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0);
 const WEBP = bytes(0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50);
 
+/** Varje route-fil under app/api, for pastaenden som galler alla. */
+function walkRoutes(): { path: string; text: string }[] {
+  const out: { path: string; text: string }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (entry === "route.ts") {
+        out.push({ path: path.relative(ROOT, full), text: readFileSync(full, "utf8") });
+      }
+    }
+  };
+  walk(path.join(ROOT, "app", "api"));
+  return out;
+}
+
 describe("uploaded files are judged by their bytes", () => {
   it("recognises the four allowed formats", () => {
     expect(sniffImage(PNG)?.mime).toBe("image/png");
@@ -64,12 +80,35 @@ describe("uploaded files are judged by their bytes", () => {
     expect(declaredTypeMatches("image/gif", sniffed)).toBe(false);
   });
 
-  it("is used by the avatar route, and the stored type comes from it", () => {
-    const route = read("app/api/avatar/route.ts");
-    expect(route).toMatch(/sniffImage/);
-    // contentType far inte komma fran klientens pastaende.
-    expect(route).not.toMatch(/contentType:\s*file\.type/);
-    expect(route).toMatch(/contentType:\s*sniffed\.mime/);
+  it("caps the size of every route that accepts a file", () => {
+    // Tva sorters uppladdning maste hallas isar.
+    //
+    // En fil som SPARAS hos oss maste kontrolleras byte for byte — den
+    // ligger kvar och kan lankas till. Den sortens route finns inte
+    // langre: ljudet togs bort av integritetsskal och avataren ags av
+    // Clerk. lib/upload.ts ar kvar med flit, sa att kontrollen finns
+    // fardig och provad om en uppladdning nagonsin kommer tillbaka.
+    //
+    // En fil som bara LASES och slangs — importen av en PDF — behover
+    // inte samma signaturkontroll, for ingenting blir kvar. Den behover
+    // daremot ett tak, annars ar den en vag att aka minnet slut.
+    const uploads = walkRoutes().filter(r => r.text.includes("formData()"));
+    expect(uploads.length).toBeGreaterThan(0);
+
+    for (const r of uploads) {
+      const capped =
+        /MAX_UPLOAD_BYTES|file\.size >/.test(r.text) ||
+        /extractTextFromFile/.test(r.text); // taket sitter i lib/extract.ts
+      expect(capped, `${r.path} accepts a file with no size limit`).toBe(true);
+    }
+  });
+
+  it("stores no uploaded file anywhere", () => {
+    // Det starkaste pastaendet: en fil fran en anvandare blir aldrig kvar
+    // hos oss. Da finns det inget att servera, inget att lanka till och
+    // inget att missta for en bild.
+    const storing = walkRoutes().filter(r => /storage\s*\n?\s*\.from\(|\.upload\(/.test(r.text));
+    expect(storing.map(r => r.path)).toEqual([]);
   });
 });
 
@@ -80,7 +119,19 @@ describe("private works stay private", () => {
   it("only lists shared works to a friend", () => {
     // Buggen som fanns: where hamtade alla verk, sa synlighetsvaljaren
     // hade ingen verkan pa den har sidan.
-    expect(publicProfile).toMatch(/visibility:\s*"public"/);
+    //
+    // Kontrollen bor numera i lib/sharedLibrary.ts, dar bade den har
+    // sidan och allt som kommer efter maste ga igenom den. Sidan far
+    // inte fraga databasen om verk pa egen hand igen.
+    expect(read("lib/sharedLibrary.ts")).toMatch(/includePrivate \? \{\} : \{ visibility: "public" \}/);
+    expect(publicProfile).toMatch(/sharedLibrary\(person\.id, state === "self"\)/);
+    expect(publicProfile).not.toMatch(/prisma\.work\.findMany/);
+  });
+
+  it("never selects the words of a section for the progress bars", () => {
+    // Framstegen raknas ur status och SM-2-siffror. Texten behovs inte,
+    // och att hamta den vore att lasa nagon annans material.
+    expect(read("lib/sharedLibrary.ts")).not.toMatch(/content:\s*true|name:\s*true/);
   });
 
   it("does not name a private work through its medal", () => {

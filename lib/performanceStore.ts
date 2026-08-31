@@ -10,6 +10,7 @@
 
 import { prisma } from "@/lib/db";
 import { track } from "@/lib/analytics";
+import { recordMilestone } from "@/lib/posts";
 import {
   standingFor, isPassingRun, performanceXP, RULES,
   type PerformanceStanding,
@@ -195,6 +196,16 @@ export async function recordRun(input: RecordRunInput): Promise<RecordRunResult>
   });
 
   await syncMedal(input.userId, input.workId, work.title, after);
+
+  // Milstolpen skrivs bara nar titeln tands forsta gangen, inte vid
+  // varje godkant framforande — annars vore vannernas flode en logg.
+  //
+  // Verkets titel skickas INTE med. Inlagget pekar pa verket, och
+  // lib/posts avgor vid lasningen om det far namnges. Sa slipper en
+  // gammal rad ligga kvar och namnge nagot som sedan gjorts privat.
+  if (justMastered) {
+    await recordMilestone(input.userId, input.workId, "Performed a work from memory");
+  }
 
   await track("recitation_completed", input.userId, {
     passed, accuracy, justMastered, sections: work._count.sections,

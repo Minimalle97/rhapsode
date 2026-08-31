@@ -14,8 +14,12 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { friendState } from "@/lib/friends";
+import { sharedLibrary } from "@/lib/sharedLibrary";
+import { postsBy, canSeePosts } from "@/lib/posts";
 import { getRank, getNextRank } from "@/lib/xp";
 import { FriendButton } from "@/components/friends/FriendButton";
+import { SharedWorks } from "@/components/friends/SharedWorks";
+import { PostFeed } from "@/components/friends/PostFeed";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +31,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
   const u = await prisma.user.findUnique({
-    where: { handle: handle.toLowerCase() },
+    where: { handleLower: handle.toLowerCase() },
     select: { username: true },
   });
   return { title: u?.username ?? "Profile" };
@@ -38,9 +42,9 @@ export default async function PublicProfile({ params }: Props) {
   const viewer = await requireUser();
 
   const person = await prisma.user.findUnique({
-    where: { handle: handle.toLowerCase() },
+    where: { handleLower: handle.toLowerCase() },
     select: {
-      id: true, handle: true, username: true, avatarUrl: true,
+      id: true, handle: true, username: true, avatarUrl: true, bio: true,
       xp: true, rank: true, streakDays: true, createdAt: true,
       medals: {
         orderBy: { earnedAt: "desc" },
@@ -76,15 +80,13 @@ export default async function PublicProfile({ params }: Props) {
   //
   // Egna profilen är undantaget: där ser man förstås allt sitt eget.
   const works = isFriend
-    ? await prisma.work.findMany({
-        where: {
-          userId: person.id,
-          ...(state === "self" ? {} : { visibility: "public" }),
-        },
-        orderBy: { createdAt: "desc" },
-        take:    40,
-        select:  { id: true, title: true, author: true, type: true },
-      })
+    ? await sharedLibrary(person.id, state === "self")
+    : [];
+
+  // Inlaggen foljer samma regel som verken: vanner, eller ingen. Fragan
+  // stalls till lib/posts sa att svaret blir detsamma har som i API:et.
+  const posts = (await canSeePosts(viewer.id, person.id))
+    ? await postsBy(person.id, viewer.id)
     : [];
 
   const since = new Date(person.createdAt).toLocaleDateString("en-GB", {
@@ -140,6 +142,16 @@ export default async function PublicProfile({ params }: Props) {
         </div>
       </div>
 
+      {/* Beskrivning — bara for vanner, precis som verken */}
+      {isFriend && person.bio && (
+        <p style={{
+          fontSize: "14px", color: "var(--parch2)", lineHeight: 1.7,
+          whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: "24px",
+        }}>
+          {person.bio}
+        </p>
+      )}
+
       {/* Rang */}
       <div style={{
         background: "var(--bg2)", border: "1px solid var(--bord)",
@@ -172,7 +184,7 @@ export default async function PublicProfile({ params }: Props) {
 
       {/* Siffror */}
       <div style={{
-        display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
         gap: "10px", marginBottom: "26px",
       }}>
         <Stat label="Works"  value={person._count.works} />
@@ -228,19 +240,25 @@ export default async function PublicProfile({ params }: Props) {
       ) : works.length === 0 ? (
         <p style={empty}>Nothing here yet.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-          {works.map(w => (
-            <div key={w.id} style={{
-              background: "var(--bg2)", border: "1px solid var(--bord)",
-              borderRadius: "var(--r2)", padding: "12px 16px",
-            }}>
-              <p style={{ fontSize: "14px", color: "var(--parch)" }}>{w.title}</p>
-              <p style={{ fontSize: "11px", color: "var(--muted)" }}>
-                {w.author} · {w.type.toLowerCase()}
-              </p>
-            </div>
-          ))}
-        </div>
+        <SharedWorks works={works} />
+      )}
+
+      {/* Inlagg */}
+      <h2 style={{ ...h2, marginTop: "30px" }}>Posts</h2>
+      {!isFriend ? (
+        <p style={empty}>
+          What {person.username} posts is shown to friends.
+        </p>
+      ) : (
+        <PostFeed
+          initial={posts.map(p => ({ ...p, createdAt: p.createdAt.toISOString() }))}
+          viewer={{
+            id: viewer.id, username: viewer.username,
+            handle: viewer.handle, avatarUrl: viewer.avatarUrl,
+          }}
+          canWrite={state === "self"}
+          empty={state === "self" ? "You haven't posted anything yet." : "Nothing posted yet."}
+        />
       )}
     </div>
   );

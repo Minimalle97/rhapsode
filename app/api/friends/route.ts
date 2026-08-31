@@ -24,7 +24,12 @@ export async function GET() {
       friends,
       incoming,
       outgoing,
-      me: { handle: user.handle ?? null, username: user.username },
+      me: {
+        id:        user.id,
+        handle:    user.handle ?? null,
+        username:  user.username,
+        avatarUrl: user.avatarUrl,
+      },
     });
   } catch (err) {
     return fail(err);
@@ -42,7 +47,9 @@ export async function POST(req: NextRequest) {
     }
 
     const target = await prisma.user.findUnique({
-      where:  { handle: clean },
+      // Uppslagning pa gemener sa att @Casper och @casper hittar samma
+      // person. Visningsformen kommer tillbaka i select.
+      where:  { handleLower: clean.toLowerCase() },
       select: { id: true, username: true, handle: true },
     });
 

@@ -16,6 +16,8 @@ export interface SessionUser {
   clerkId:    string;
   username:   string;
   handle:     string | null;
+  /** Nagra rader om sig sjalv. Syns bara for vanner. */
+  bio:        string | null;
   avatarUrl:  string | null;
   xp:         number;
   rank:       string;
@@ -53,10 +55,21 @@ export const requireUser = cache(async (): Promise<SessionUser> => {
       username,
       avatarUrl: clerkUser.imageUrl ?? null,
     },
-    // Rör inte avatarUrl — den kan ha ersatts av en egen uppladdning
-    update: { lastActive: new Date() },
+    // RATTAT: profilbilden skilde sig at mellan "Manage account" och
+    // profilsidan.
+    //
+    // Clerk agde en bild (den UserButton visar) och vi agde en annan
+    // (uppladdad till Supabase). Bytte man den ena andrades inte den
+    // andra, sa samma person hade tva ansikten i samma app.
+    //
+    // Nu ager Clerk bilden. Raden speglar den vid varje inloggning, och
+    // da KAN de inte glida isar. Byter man bild gor man det pa ett stalle.
+    update: {
+      lastActive: new Date(),
+      avatarUrl:  clerkUser.imageUrl ?? null,
+    },
     select: {
-      id: true, clerkId: true, username: true, handle: true,
+      id: true, clerkId: true, username: true, handle: true, bio: true,
       avatarUrl: true, xp: true, rank: true,
       streakDays: true, lastActive: true, createdAt: true,
       plan: true, planSource: true, subscriptionStatus: true,

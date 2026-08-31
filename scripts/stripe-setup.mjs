@@ -37,11 +37,6 @@ const LOOKUP = {
   year:  "rhapsode_pro_yearly",
 };
 
-function envInt(name, fallback) {
-  const n = Number(process.env[name]);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
-}
-
 const CURRENCY = (process.env.BILLING_CURRENCY ?? "sek").toLowerCase();
 
 /**
@@ -60,18 +55,13 @@ function requiredAmount(name) {
   const raw = process.env[name];
   const n = Number(raw);
   if (!raw || !Number.isFinite(n) || n <= 0) {
-    console.error(
-      `
-  ${name} is not set.
-
-` +
-      `  Prices are never guessed here — that is how two different
-` +
-      `  amounts end up in the code and in Stripe. Set it in .env
-` +
-      `  (and in Vercel) and run again.
-`
-    );
+    console.error("");
+    console.error(`  ${name} is not set.`);
+    console.error("");
+    console.error("  Prices are never guessed here — that is how two different");
+    console.error("  amounts end up in the code and in Stripe. Set it in .env");
+    console.error("  (and in Vercel) and run again.");
+    console.error("");
     process.exit(1);
   }
   return Math.floor(n);
@@ -241,6 +231,15 @@ async function verify() {
       "invoice.paid",
       "invoice.payment_failed",
     ];
+
+    // Kravs forst nar Stripe Tax ar pa. Da kan en faktura misslyckas med
+    // att FASTSTALLAS — momsen gar inte att rakna fram — och da skickas
+    // inget payment_failed alls. Utan det har eventet blir det ett tyst
+    // intaktsbortfall. Laggs till i listan bara nar flaggan ar satt, sa
+    // att kontrollen inte klagar pa nagot som annu inte behovs.
+    if (process.env.STRIPE_AUTOMATIC_TAX === "true") {
+      needed.push("invoice.finalization_failed");
+    }
     const listening = hook.enabled_events.includes("*")
       ? needed
       : needed.filter(e => hook.enabled_events.includes(e));

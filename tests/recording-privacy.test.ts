@@ -71,12 +71,13 @@ describe("recordings never leave the device", () => {
     expect(recite).toMatch(/audio\.reset\(\)/); // slappt igen nar man gar vidare
   });
 
-  it("keeps the Supabase storage helper away from audio", () => {
-    // Avataren ligger kvar i Storage, och det är i sin ordning — en bild
-    // man själv valt att ladda upp är inte samma sak som rösten.
+  it("puts nothing at all into Supabase storage", () => {
+    // Var tidigare "bara avataren far ligga dar". Avataren ags numera av
+    // Clerk — profilbilderna slutade stamma overens nar vi hade en egen —
+    // sa listan ar tom, och det ar ett starkare pastaende an det gamla.
     const storageUsers = sources
       .filter(s => s.text.includes("supabase.storage"))
       .map(s => s.path);
-    expect(storageUsers).toEqual(["app\\api\\avatar\\route.ts".replace(/\\/g, path.sep)]);
+    expect(storageUsers).toEqual([]);
   });
 });

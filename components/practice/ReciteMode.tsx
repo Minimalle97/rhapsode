@@ -63,7 +63,9 @@ export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
   const [gradeError, setGradeError] = useState<string | null>(null);
 
   const hasAttempt  = speech.transcript.trim().length > 0;
-  const isRecording = speech.isListening || audio.isRecording;
+  // isActive, inte isListening — motorn startar om vid pauser och
+  // isListening blinkar da falskt. Se hooks/useSpeechRecitation.ts.
+  const isRecording = speech.isActive || audio.isRecording;
 
   async function handleStart() {
     speech.reset();

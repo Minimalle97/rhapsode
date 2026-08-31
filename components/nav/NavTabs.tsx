@@ -16,7 +16,7 @@ export function NavTabs() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Main" style={{ display: "flex", gap: "2px" }}>
+    <nav aria-label="Main" className="nav-tabs">
       {TABS.map(tab => {
         const isActive =
           pathname === tab.href || pathname.startsWith(`${tab.href}/`);

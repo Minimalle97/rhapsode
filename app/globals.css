@@ -36,6 +36,10 @@
   --r3:  5px;
   --sh: 0 4px 24px rgba(0, 0, 0, 0.45);
   --nav-h: 58px;
+  /* Hur mycket fliklisten tar av skarmens nederkant. Noll pa dator, dar
+     den inte finns. Allt som ligger fast i underkant laser den har i
+     stallet for att gissa — annars hamnar de ovanpa varandra. */
+  --tabbar: 0px;
 }
 
 html, body {
@@ -44,6 +48,10 @@ html, body {
   font-family: var(--fb);
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
+  /* Safari forstorar text pa egen hand nar telefonen vands. Sidan ar
+     redan satt for sin bredd, sa den hjalpen gor bara skada. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 button, input, select, textarea {
@@ -167,16 +175,81 @@ button, input, select, textarea {
   transition: width .5s ease;
 }
 
-/* ── Responsiv växling ─────────────────────────────────────────── */
-.nav-desktop-only { display: flex; }
+/* ── Responsiv växling ───────────────────────────────────────────
+
+   Tva olika brytpunkter, for de gor tva olika saker.
+
+   Vid 900px byts rangen i topplisten mot en remsa under den. Det ar en
+   ren omflyttning: samma uppgift, annan plats.
+
+   Vid 720px flyttar flikarna ned till en egen list langst ned. Pa en
+   telefon ryms de inte pa raden — de blev tidigare liggande utanfor
+   skarmen och drog med sig HELA sidan i sidled — och langst ned ligger
+   de dessutom dar tummen nar.
+
+   RATTAT: .nav-desktop-only bar ocksa `style={{ display: "flex" }}` i
+   layouten. En inline-stil vinner over ett stilark, sa `display: none`
+   nedan hade ingen verkan: rangbalken lag kvar pa telefonen och gjorde
+   topplisten 711px bred pa en 375px skarm. Reglerna star nu i CSS, dar
+   media-frageorna kan na dem.                                          */
+.nav-desktop-only { display: flex; align-items: center; gap: 14px; }
 .nav-mobile-only  { display: none; }
 
-@media (max-width: 720px) {
+.nav-tabs { display: flex; gap: 2px; }
+
+@media (max-width: 900px) {
   .nav-desktop-only { display: none; }
   .nav-mobile-only  { display: flex; }
+}
+
+@media (max-width: 720px) {
   .app-nav { padding: 0 14px; gap: 6px; }
-  .nav-tab { padding: 7px 10px; font-size: 12px; }
   .brand   { font-size: 18px; }
+
+  .nav-tabs {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 200;
+    gap: 0;
+    padding: 0 4px;
+    /* Hemknappen pa en iPhone ligger over sidans nedersta rad. */
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(12, 16, 21, 0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--bord);
+  }
+  .nav-tab {
+    flex: 1;
+    text-align: center;
+    /* Hog nog att traffa med tummen. Under ungefar 44px blir en flik
+       nagot man siktar pa i stallet for nagot man trycker pa. */
+    padding: 15px 2px;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+  }
+
+  /*
+    iOS zoomar in sidan nar man staller markoren i ett falt vars text ar
+    mindre an 16px, och zoomar inte ut igen. Det ar den enskilt mest
+    irriterande saken med ett formular pa en iPhone.
+
+    !important behovs: falten sitter med style-attribut i komponenterna,
+    och en inline-stil vinner annars over stilarket. Regeln galler bara
+    pa smal skarm, sa skrivbordets 14px ar orord.
+  */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Listen ligger over sidan. Utan detta hamnar sidans sista rad under
+     den, och pa korta sidor gar den inte att komma at alls. */
+  :root { --tabbar: calc(44px + env(safe-area-inset-bottom)); }
+  /* Bara inne i appen. Villkoren och integritetspolicyn har ingen
+     fliklist, och ska inte ha ett tomrum dar den skulle ha legat. */
+  .app-shell main { padding-bottom: var(--tabbar); }
 }
 
 /* Bakåtkompatibelt med tidigare faser */

@@ -1,12 +1,32 @@
 "use client";
 // hooks/useSpeechRecitation.ts
-// Fas 8: tunn wrapper runt Web Speech API (SpeechRecognition).
+// Tunn wrapper runt Web Speech API (SpeechRecognition).
+//
+// ── RÄTTAT: recitationen dog när man andades ──────────────────────────
+//
+// `continuous = true` betyder INTE att motorn lyssnar tills man säger
+// till. Chrome avslutar sessionen av sig själv efter en stunds tystnad,
+// och även efter en dryg minut oavsett. Då small `onend`, isListening
+// blev falskt, och gränssnittet som villkorades på det hoppade tillbaka
+// till startläget — mitt i ett framförande, med transkriptet dolt och
+// utan knapp för att skicka in det man redan sagt.
+//
+// Det gjorde Performance Mode obrukbart för allt längre än några rader:
+// en paus mellan två strofer räckte.
+//
+// Nu skiljer hooken på TVÅ saker som förut var samma:
+//
+//   wantListening — vad den som anropar har bett om. Ändras bara av
+//                   start() och stop().
+//   isListening   — om motorn råkar vara igång just nu.
+//
+// Slutar motorn medan wantListening är sant startas den om, och
+// transkriptet behålls. Anroparen märker ingenting.
 //
 // Begränsningar värda att känna till:
-// - Kräver en säker kontext (HTTPS eller localhost) — fungerar på Vercel-
-//   deployments per default, men inte över http:// i samma nätverk.
-// - Stöds inte i Firefox överhuvudtaget. Chrome/Edge/Safari fungerar.
-// - Ger BARA text, ingen ljuddata — därför finns useAudioRecorder separat.
+// - Kräver säker kontext (HTTPS eller localhost).
+// - Stöds inte i Firefox. Chrome/Edge/Safari fungerar.
+// - Ger BARA text, ingen ljuddata.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -16,60 +36,93 @@ interface UseSpeechRecitationOptions {
 
 interface UseSpeechRecitationResult {
   isSupported:       boolean;
-  isListening:        boolean;
-  transcript:          string; // slutgiltig text hittills
-  interimTranscript:   string; // pågående, ej slutgiltig text
-  error:               string | null;
-  start:               () => void;
-  stop:                () => void;
-  reset:               () => void;
+  /** Motorn är igång just nu. Kan blinka till falskt vid omstart. */
+  isListening:       boolean;
+  /** Vad anroparen bett om. Det här ska gränssnittet villkoras på. */
+  isActive:          boolean;
+  transcript:        string;
+  interimTranscript: string;
+  error:             string | null;
+  start:             () => void;
+  stop:              () => void;
+  reset:             () => void;
 }
 
 // SpeechRecognition har inga officiella TS-typer i standardbiblioteket —
 // `any` här är medvetet, inte en glömd typning.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SpeechRecognitionInstance = any;
+
+/**
+ * Fel där en omstart är meningslös.
+ *
+ * Nekad mikrofon eller saknad enhet blir inte bättre av att försöka igen
+ * — det skulle bara ge en tyst evighetsloop av misslyckade starter.
+ */
+const FATAL = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
 
 export function useSpeechRecitation(
   { lang = "en-US" }: UseSpeechRecitationOptions = {}
 ): UseSpeechRecitationResult {
   const [isSupported, setIsSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isActive, setIsActive]       = useState(false);
   const [transcript, setTranscript]   = useState("");
   const [interim, setInterim]         = useState("");
   const [error, setError]             = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const recognitionRef  = useRef<SpeechRecognitionInstance | null>(null);
+  const wantListening   = useRef(false);
+  const restartTimer    = useRef<number | null>(null);
+  const langRef         = useRef(lang);
+  langRef.current = lang;
 
   useEffect(() => {
     const SpeechRecognition =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     setIsSupported(!!SpeechRecognition);
   }, []);
 
-  // Stoppar igenkänningen om komponenten avmonteras medan den lyssnar
-  // (t.ex. byter praktik-läge eller navigerar bort).
-  useEffect(() => {
-    return () => recognitionRef.current?.stop();
-  }, []);
-
-
-  const start = useCallback(() => {
+  /**
+   * Startar motorn.
+   *
+   * `keepTranscript` skiljer en omstart från en ny inspelning. Vid omstart
+   * MÅSTE det man redan sagt vara kvar — annars tappar man halva
+   * framförandet varje gång man tar ett andetag.
+   */
+  const begin = useCallback((keepTranscript: boolean) => {
     const SpeechRecognition =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setError("Speech recognition isn't supported in this browser. Try Chrome, Edge, or Safari.");
       return;
     }
 
-    setError(null);
-    setTranscript("");
-    setInterim("");
+    // Städa bort en tidigare instans innan en ny skapas.
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
+      } catch {
+        /* redan stoppad */
+      }
+    }
+
+    if (!keepTranscript) {
+      setTranscript("");
+      setInterim("");
+      setError(null);
+    }
 
     const recognition: SpeechRecognitionInstance = new SpeechRecognition();
-    recognition.lang            = lang;
-    recognition.continuous      = true;
-    recognition.interimResults  = true;
+    recognition.lang           = langRef.current;
+    recognition.continuous     = true;
+    recognition.interimResults = true;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       let finalChunk = "";
       let interimChunk = "";
@@ -78,24 +131,71 @@ export function useSpeechRecitation(
         if (result.isFinal) finalChunk += result[0].transcript;
         else interimChunk += result[0].transcript;
       }
-      if (finalChunk) setTranscript((prev) => `${prev}${prev ? " " : ""}${finalChunk.trim()}`);
+      if (finalChunk) {
+        setTranscript(prev => `${prev}${prev ? " " : ""}${finalChunk.trim()}`);
+      }
       setInterim(interimChunk);
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onerror = (event: any) => {
-      if (event.error === "no-speech") return; // vanligt, inte värt att larma om
+      if (event.error === "no-speech" || event.error === "aborted") return;
+
+      if (FATAL.has(event.error)) {
+        // Ingen omstart. Att försöka igen ger bara samma svar.
+        wantListening.current = false;
+        setIsActive(false);
+        setError(
+          event.error === "not-allowed" || event.error === "service-not-allowed"
+            ? "Microphone access was refused. Allow it in the browser and start again."
+            : "No microphone was available."
+        );
+        return;
+      }
       setError(`Recognition error: ${event.error}`);
     };
 
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      setIsListening(false);
 
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [lang]);
+      // Kärnan i rättningen: motorn slutade, men användaren har inte
+      // sagt stopp. Starta om och behåll transkriptet.
+      if (wantListening.current) {
+        restartTimer.current = window.setTimeout(() => {
+          if (wantListening.current) begin(true);
+        }, 250);
+      }
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsListening(true);
+    } catch {
+      // start() kastar om en instans redan är igång. Nästa onend tar det.
+    }
+  }, []);
+
+  const start = useCallback(() => {
+    wantListening.current = true;
+    setIsActive(true);
+    setError(null);
+    begin(false);
+  }, [begin]);
 
   const stop = useCallback(() => {
-    recognitionRef.current?.stop();
+    wantListening.current = false;
+    setIsActive(false);
+
+    if (restartTimer.current !== null) {
+      clearTimeout(restartTimer.current);
+      restartTimer.current = null;
+    }
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      /* redan stoppad */
+    }
     setIsListening(false);
   }, []);
 
@@ -105,5 +205,22 @@ export function useSpeechRecitation(
     setError(null);
   }, []);
 
-  return { isSupported, isListening, transcript, interimTranscript: interim, error, start, stop, reset };
+  // Stoppar allt om komponenten avmonteras medan den lyssnar.
+  useEffect(() => {
+    return () => {
+      wantListening.current = false;
+      if (restartTimer.current !== null) clearTimeout(restartTimer.current);
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        /* redan stoppad */
+      }
+    };
+  }, []);
+
+  return {
+    isSupported, isListening, isActive,
+    transcript, interimTranscript: interim,
+    error, start, stop, reset,
+  };
 }

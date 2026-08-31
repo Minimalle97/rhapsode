@@ -17,6 +17,7 @@ export type EventName =
   | "subscription_renewed"
   | "subscription_cancelled"
   | "payment_failed"
+  | "tax_calculation_failed"
   | "portal_opened"
   | "code_redeemed"
   // produkt

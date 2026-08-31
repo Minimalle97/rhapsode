@@ -28,7 +28,7 @@ export default async function AppLayout({
     : 100;
 
   return (
-    <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
+    <div className="app-shell" style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <a href="#main" className="skip-link">Skip to content</a>
 
       <header className="app-nav">
@@ -43,7 +43,7 @@ export default async function AppLayout({
 
         <div style={{ flex: 1 }} />
 
-        <div className="nav-desktop-only" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+        <div className="nav-desktop-only">
           <SyncIndicator userId={user.id} />
           <RankBar
             xp={user.xp}

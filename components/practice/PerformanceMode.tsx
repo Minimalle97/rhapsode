@@ -86,8 +86,8 @@ export function PerformanceMode({
   // renderingen — att mutera en ref mitt i en render ar just den sortens
   // sidoeffekt som gor att React kan rita om och tappa rakningen.
   useEffect(() => {
-    if (speech.isListening) noteSpeech();
-  }, [speech.transcript, speech.interimTranscript, speech.isListening, noteSpeech]);
+    if (speech.isActive) noteSpeech();
+  }, [speech.transcript, speech.interimTranscript, speech.isActive, noteSpeech]);
 
   function begin() {
     setResult(null);
@@ -222,10 +222,12 @@ export function PerformanceMode({
   }
 
   // ── Under tiden ─────────────────────────────────────────────────
-  if (speech.isListening) {
+  if (speech.isActive) {
     return (
       <div>
-        <p style={eyebrow}>Performing</p>
+        <p style={eyebrow}>
+          {speech.isListening ? "Performing" : "Performing · listening again…"}
+        </p>
         <p style={{
           fontFamily: "var(--fd)", fontSize: "26px", fontWeight: 300,
           color: "var(--parch)", marginBottom: "20px",
@@ -242,6 +244,15 @@ export function PerformanceMode({
           <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
             words spoken
           </p>
+
+          {/* De sista orden, sa att man ser ATT det gar fram. Hela texten
+              visas inte — det vore en ledtrad mitt i ett framforande. */}
+          {(speech.transcript || speech.interimTranscript) && (
+            <p style={tailStyle}>
+              …{speech.transcript.trim().split(/\s+/).slice(-8).join(" ")}
+              <span style={{ color: "var(--muted)" }}> {speech.interimTranscript}</span>
+            </p>
+          )}
         </div>
 
         {speech.error && (
@@ -320,6 +331,15 @@ const notice: CSSProperties = {
   color: "var(--muted)", background: "var(--bg3)",
   borderRadius: "var(--r2)", border: "1px solid var(--bord)",
 };
+const tailStyle: CSSProperties = {
+  marginTop:  "16px",
+  fontSize:   "13px",
+  lineHeight: 1.6,
+  color:      "var(--parch2)",
+  fontFamily: "var(--fb)",
+  wordBreak:  "break-word",
+};
+
 const liveBox: CSSProperties = {
   background: "var(--bg3)", border: "1px solid var(--bord)",
   borderRadius: "var(--r)", padding: "36px 24px",

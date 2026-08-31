@@ -444,7 +444,9 @@ export function WorkEditor({
       {/* Åtgärdsrad */}
       {selected.size > 0 && (
         <div style={{
-          position: "fixed", bottom: 0, left: 0, right: 0,
+          // Over fliklisten pa telefon, i underkant pa dator. Variabeln
+          // ar noll dar listen inte finns, sa raden blir densamma.
+          position: "fixed", bottom: "var(--tabbar)", left: 0, right: 0,
           background: "rgba(12,16,21,0.95)", backdropFilter: "blur(16px)",
           borderTop: "1px solid var(--bord)",
           padding: "14px 20px calc(14px + env(safe-area-inset-bottom))",
