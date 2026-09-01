@@ -8,6 +8,7 @@ import { getEntitlements } from "@/lib/billing/entitlements";
 import { getRank, getNextRank, xpToNextRank } from "@/lib/xp";
 import { RankBar } from "@/components/rank/RankBar";
 import { NavTabs } from "@/components/nav/NavTabs";
+import { duelNotices } from "@/lib/duels";
 import { SyncIndicator } from "@/components/sync/SyncIndicator";
 import { DevViewSwitch } from "@/components/billing/DevViewSwitch";
 
@@ -18,6 +19,10 @@ export default async function AppLayout({
 }) {
   const user   = await requireUser();
   const ent    = await getEntitlements(user);
+  // Bubblorna pa Friends-fliken. Tva count-fragor, i layouten sa att de
+  // syns fran vilken sida man an star pa — en notis som bara finns pa
+  // sidan den galler ar ingen notis.
+  const notices = await duelNotices(user.id);
   const rank   = getRank(user.xp);
   const next   = getNextRank(user.xp);
   const toNext = xpToNextRank(user.xp);
@@ -55,7 +60,7 @@ export default async function AppLayout({
           />
         </div>
 
-        <NavTabs />
+        <NavTabs notices={notices} />
 
         {/*
           Utvecklarmarkoren, som ocksa ar en vaxel mellan Pro och gratis.

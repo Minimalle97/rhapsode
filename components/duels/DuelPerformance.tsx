@@ -1,0 +1,412 @@
+"use client";
+// components/duels/DuelPerformance.tsx
+//
+// Framforandet som raknas for tvekampen.
+//
+// Byggd pa samma rostlage som PerformanceMode — Web Speech i webblasaren,
+// inget ljud lamnar enheten, bara transkriptet. Men den skickar till en
+// annan route, och det ar hela skillnaden: ett forsok har ger ingen XP,
+// flyttar ingen SM-2 och kan inte tanda en mastartitel. Det raknas for
+// kampen och for ingenting annat.
+//
+// Det som visas hela tiden ar det basta forsoket hittills — ditt och
+// deras. En tvekamp dar man inte ser hur man ligger till ar bara tva
+// personer som ovar var for sig.
+
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
+import { useSpeechRecitation } from "@/hooks/useSpeechRecitation";
+import { useCountdown } from "./useCountdown";
+
+interface Best {
+  wordsHeld:     number;
+  wordsPossible: number;
+  accuracy:      number;
+  attempts:      number;
+}
+
+interface AttemptResult {
+  accuracy:     number;
+  wordsTotal:   number;
+  wordsCorrect: number;
+  missed:       string[];
+  isBest:       boolean;
+  mine:   Best;
+  theirs: { wordsHeld: number; accuracy: number; attempts: number };
+}
+
+interface Props {
+  duelId:       string;
+  workTitle:    string;
+  author:       string;
+  sectionCount: number;
+  endsAt:       string;
+  opponentName: string;
+  mine:         Best;
+  theirs:       { wordsHeld: number; accuracy: number; attempts: number };
+}
+
+const LANGUAGES = [
+  { code: "en-US", label: "English" },
+  { code: "sv-SE", label: "Swedish" },
+  { code: "es-ES", label: "Spanish" },
+  { code: "fr-FR", label: "French" },
+  { code: "de-DE", label: "German" },
+  { code: "it-IT", label: "Italian" },
+];
+
+/** Tystnad langre an sa har raknas som en tvekan. Samma som PerformanceMode. */
+const HESITATION_MS = 3_000;
+
+export function DuelPerformance({
+  duelId, workTitle, author, sectionCount,
+  endsAt, opponentName, mine: initialMine, theirs: initialTheirs,
+}: Props) {
+  const router = useRouter();
+  const [lang, setLang] = useState("en-US");
+  const speech = useSpeechRecitation({ lang });
+
+  const [mine, setMine]     = useState(initialMine);
+  const [theirs, setTheirs] = useState(initialTheirs);
+  const [result, setResult] = useState<AttemptResult | null>(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  const { label: timeLeft, done } = useCountdown(endsAt);
+
+  const startedAt   = useRef(0);
+  const lastWordAt  = useRef(0);
+  const hesitations = useRef(0);
+  const longestGap  = useRef(0);
+
+  const noteSpeech = useCallback(() => {
+    const now = Date.now();
+    if (lastWordAt.current) {
+      const gap = now - lastWordAt.current;
+      if (gap > HESITATION_MS) hesitations.current += 1;
+      if (gap > longestGap.current) longestGap.current = gap;
+    }
+    lastWordAt.current = now;
+  }, []);
+
+  useEffect(() => {
+    if (speech.isActive) noteSpeech();
+  }, [speech.transcript, speech.interimTranscript, speech.isActive, noteSpeech]);
+
+  // Gar tiden ut mitt i ett framforande stoppas det. Att lata nagon tala
+  // fardigt och sedan kasta forsoket vore samre an att saga till direkt.
+  useEffect(() => {
+    if (done && speech.isActive) speech.stop();
+  }, [done, speech]);
+
+  function begin() {
+    setResult(null);
+    setError(null);
+    hesitations.current = 0;
+    longestGap.current  = 0;
+    startedAt.current   = Date.now();
+    lastWordAt.current  = Date.now();
+    speech.reset();
+    speech.start();
+  }
+
+  async function finish() {
+    speech.stop();
+
+    const transcript = speech.transcript.trim();
+    if (!transcript) {
+      setError("Nothing was picked up. Check the microphone and try again.");
+      return;
+    }
+
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/duels/${duelId}/attempt`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          durationSecs:   Math.round((Date.now() - startedAt.current) / 1000),
+          hesitations:    hesitations.current,
+          longestPauseMs: longestGap.current,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not mark that");
+
+      setResult(data as AttemptResult);
+      setMine(data.mine);
+      setTheirs(data.theirs);
+      // Biblioteket visar samma siffra i den grona rutan.
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not mark that");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!speech.isSupported) {
+    return (
+      <div style={notice}>
+        A duel performance needs speech recognition — try Chrome, Edge, or Safari.
+      </div>
+    );
+  }
+
+  // ── Tiden ar ute ────────────────────────────────────────────────
+  if (done) {
+    return (
+      <div style={notice}>
+        Time is up. Ask for the result to see how it went.
+      </div>
+    );
+  }
+
+  // ── Efterat ─────────────────────────────────────────────────────
+  if (result) {
+    return (
+      <div>
+        <p style={{ ...eyebrow, color: result.isBest ? "var(--green)" : "var(--muted)" }}>
+          {result.isBest ? "Your best yet" : "Counted, but not your best"}
+        </p>
+
+        <p style={{
+          fontFamily: "var(--fd)", fontSize: "58px", fontWeight: 300, lineHeight: 1,
+          color: result.isBest ? "var(--green)" : "var(--parch2)", marginBottom: "6px",
+        }}>
+          {result.accuracy}%
+        </p>
+        <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "24px" }}>
+          {result.wordsCorrect} of {result.wordsTotal} words held
+        </p>
+
+        <Standings mine={mine} theirs={theirs} opponentName={opponentName} />
+
+        {result.missed.length > 0 && (
+          <p style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.7, margin: "20px 0" }}>
+            Slipped: {result.missed.slice(0, 12).join(", ")}
+          </p>
+        )}
+
+        <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "18px" }}>
+          {timeLeft} left. Your best attempt is what counts — a worse one can&apos;t
+          take it away.
+        </p>
+
+        <button onClick={begin} style={primaryBtn}>Perform it again</button>
+      </div>
+    );
+  }
+
+  // ── Under tiden ─────────────────────────────────────────────────
+  if (speech.isActive) {
+    return (
+      <div>
+        <p style={eyebrow}>
+          {speech.isListening ? "Performing" : "Performing · listening again…"}
+        </p>
+        <p style={{
+          fontFamily: "var(--fd)", fontSize: "26px", fontWeight: 300,
+          color: "var(--parch)", marginBottom: "20px",
+        }}>
+          {workTitle}
+        </p>
+
+        {/* Ordrakningen ar allt som visas. Texten far inte synas — den som
+            behover en ledtrad ar inte i ett framforande. */}
+        <div style={liveBox}>
+          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--green)", lineHeight: 1 }}>
+            {speech.transcript.trim() ? speech.transcript.trim().split(/\s+/).length : 0}
+          </p>
+          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+            words spoken
+          </p>
+
+          {(speech.transcript || speech.interimTranscript) && (
+            <p style={tailStyle}>
+              …{speech.transcript.trim().split(/\s+/).slice(-8).join(" ")}
+              <span style={{ color: "var(--muted)" }}> {speech.interimTranscript}</span>
+            </p>
+          )}
+        </div>
+
+        {speech.error && (
+          <p style={{ fontSize: "12px", color: "var(--red)", marginBottom: "14px" }}>{speech.error}</p>
+        )}
+
+        <button onClick={finish} disabled={sending} style={stopBtn}>
+          {sending ? "Marking…" : "Finish"}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Innan ───────────────────────────────────────────────────────
+  return (
+    <div>
+      <p style={eyebrow}>Duel performance</p>
+      <p style={{
+        fontFamily: "var(--fd)", fontSize: "clamp(24px, 5vw, 32px)", fontWeight: 300,
+        color: "var(--parch)", letterSpacing: "0.02em", marginBottom: "6px",
+      }}>
+        {workTitle}
+      </p>
+      <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "24px" }}>{author}</p>
+
+      <Standings mine={mine} theirs={theirs} opponentName={opponentName} />
+
+      <p style={{ fontSize: "14px", lineHeight: 1.75, color: "var(--parch2)", margin: "24px 0 22px" }}>
+        {sectionCount} section{sectionCount === 1 ? "" : "s"}, start to finish, with
+        nothing in front of you. Only this counts toward the duel — practising the
+        work earns XP and moves your library progress as usual, but it adds nothing
+        here. Perform as many times as you like; your best one stands.
+      </p>
+
+      <div style={{ marginBottom: "22px" }}>
+        <label style={label}>Language</label>
+        <select value={lang} onChange={e => setLang(e.target.value)} style={select}>
+          {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+        </select>
+      </div>
+
+      {error && <p style={{ fontSize: "12.5px", color: "var(--red)", marginBottom: "14px" }}>{error}</p>}
+
+      <button onClick={begin} style={primaryBtn}>Begin</button>
+
+      <p style={{ fontSize: "11.5px", color: "var(--bg4)", marginTop: "18px", lineHeight: 1.6 }}>
+        Your voice is turned into text in the browser. No audio is recorded or sent.
+      </p>
+    </div>
+  );
+}
+
+/** Hur ni ligger till. Ditt basta mot deras, sida vid sida. */
+function Standings({
+  mine, theirs, opponentName,
+}: {
+  mine: Best;
+  theirs: { wordsHeld: number; accuracy: number; attempts: number };
+  opponentName: string;
+}) {
+  const ahead  = mine.wordsHeld > theirs.wordsHeld;
+  const level  = mine.wordsHeld === theirs.wordsHeld;
+
+  return (
+    <div style={{
+      background: "var(--bg2)", border: "1px solid rgba(106,158,106,0.3)",
+      borderRadius: "var(--r)", padding: "16px 18px",
+    }}>
+      <p style={{
+        fontSize: "10px", letterSpacing: "0.16em", textTransform: "uppercase",
+        color: "var(--muted)", marginBottom: "14px",
+      }}>
+        Best performance so far
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: "12px", alignItems: "center" }}>
+        <Side
+          label="You"
+          words={mine.wordsHeld}
+          possible={mine.wordsPossible}
+          accuracy={mine.accuracy}
+          attempts={mine.attempts}
+          lead={ahead || level}
+        />
+        <div style={{ width: "1px", background: "var(--bord)", alignSelf: "stretch" }} />
+        <Side
+          label={opponentName}
+          words={theirs.wordsHeld}
+          possible={mine.wordsPossible}
+          accuracy={theirs.accuracy}
+          attempts={theirs.attempts}
+          lead={!ahead || level}
+          align="right"
+        />
+      </div>
+
+      <p style={{
+        fontSize: "11.5px", color: "var(--muted)", textAlign: "center",
+        marginTop: "14px", paddingTop: "12px", borderTop: "1px solid var(--bord)",
+      }}>
+        {level && mine.wordsHeld === 0
+          ? "Neither of you has performed it yet."
+          : level
+            ? "Dead level."
+            : ahead
+              ? `You are ahead by ${mine.wordsHeld - theirs.wordsHeld} words.`
+              : `${opponentName} is ahead by ${theirs.wordsHeld - mine.wordsHeld} words.`}
+      </p>
+    </div>
+  );
+}
+
+function Side({
+  label, words, possible, accuracy, attempts, lead, align = "left",
+}: {
+  label: string; words: number; possible: number; accuracy: number;
+  attempts: number; lead: boolean; align?: "left" | "right";
+}) {
+  return (
+    <div style={{ textAlign: align, minWidth: 0 }}>
+      <p style={{
+        fontSize: "11.5px", color: "var(--muted)", marginBottom: "6px",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>
+        {label}
+      </p>
+      <p style={{
+        fontFamily: "var(--fd)", fontSize: "30px", fontWeight: 300, lineHeight: 1.1,
+        color: lead ? "var(--green)" : "var(--parch2)",
+      }}>
+        {words.toLocaleString()}
+      </p>
+      <p style={{ fontSize: "11px", color: "var(--muted)" }}>
+        words{possible > 0 && ` of ${possible}`}
+      </p>
+      <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "3px" }}>
+        {accuracy}% · {attempts} {attempts === 1 ? "run" : "runs"}
+      </p>
+    </div>
+  );
+}
+
+// ── Stilar ────────────────────────────────────────────────────────────
+const eyebrow: CSSProperties = {
+  fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase",
+  color: "var(--green)", marginBottom: "10px",
+};
+const notice: CSSProperties = {
+  padding: "24px", textAlign: "center", fontSize: "13px", lineHeight: 1.6,
+  color: "var(--muted)", background: "var(--bg3)",
+  borderRadius: "var(--r2)", border: "1px solid var(--bord)",
+};
+const liveBox: CSSProperties = {
+  background: "var(--bg2)", border: "1px solid rgba(106,158,106,0.3)",
+  borderRadius: "var(--r)", padding: "24px", marginBottom: "20px",
+  textAlign: "center",
+};
+const tailStyle: CSSProperties = {
+  marginTop: "16px", fontSize: "13px", lineHeight: 1.6,
+  color: "var(--parch2)", fontFamily: "var(--fb)", wordBreak: "break-word",
+};
+const primaryBtn: CSSProperties = {
+  padding: "12px 26px", borderRadius: "var(--r3)",
+  background: "var(--green)", border: "1px solid var(--green)",
+  color: "var(--bg)", fontSize: "14px", cursor: "pointer",
+};
+const stopBtn: CSSProperties = {
+  padding: "12px 26px", borderRadius: "var(--r3)",
+  background: "transparent", border: "1px solid var(--green)",
+  color: "var(--green)", fontSize: "14px", cursor: "pointer",
+};
+const label: CSSProperties = {
+  display: "block", fontSize: "10px", letterSpacing: "0.15em",
+  textTransform: "uppercase", color: "var(--muted)", marginBottom: "7px",
+};
+const select: CSSProperties = {
+  width: "100%", maxWidth: "260px", padding: "10px 12px",
+  background: "var(--bg2)", border: "1px solid var(--bord)",
+  borderRadius: "var(--r3)", color: "var(--parch)", fontSize: "13px",
+};

@@ -46,14 +46,14 @@ export function buildWorkWhere(userId: string, filters: LibraryFilters): Prisma.
   return where;
 }
 
-/** Plattar ut och dedupar taggar från en lista verk, sorterat alfabetiskt. */
-export function getDistinctTags(works: { tags: string[] }[]): string[] {
-  const set = new Set<string>();
-  for (const work of works) {
-    for (const tag of work.tags) set.add(tag);
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b, "sv"));
-}
+// getDistinctTags ar borttagen. Den byggde taggraden i FilterBar, och den
+// raden finns inte langre — taggarna sattes av katalogiseringen och inte
+// av nagon anvandare, sa ett filter over dem lovade en ordning ingen valt.
+// Perioden och temat star kvar pa verket sjalvt, som text.
+//
+// `tag` finns kvar i LibraryFilters och i buildWorkWhere med flit: en
+// bokmarkt adress med ?tag= ska fortsatta fungera, och /api/works tar
+// fortfarande emot den.
 
 /** Sant om minst ett filter är aktivt (används för "Clear filters" / no-results-vy). */
 export function hasActiveFilters(filters: LibraryFilters): boolean {

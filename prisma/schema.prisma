@@ -59,9 +59,10 @@ model User {
   posts            Post[]
   postLikes        PostLike[]
 
-  duelsSent  Duel[] @relation("duelChallenger")
-  duelsFaced Duel[] @relation("duelOpponent")
-  duelsWon   Duel[] @relation("duelWinner")
+  duelsSent   Duel[]        @relation("duelChallenger")
+  duelsFaced  Duel[]        @relation("duelOpponent")
+  duelsWon    Duel[]        @relation("duelWinner")
+  DuelAttempt DuelAttempt[]
 }
 
 // Vänskap: en rad per relation, oavsett riktning.
@@ -107,8 +108,9 @@ model Work {
   performances Performance[]
   posts        Post[]
 
-  duelsAsChallenger Duel[] @relation("duelChallengerWork")
-  duelsAsOpponent   Duel[] @relation("duelOpponentWork")
+  duelsAsChallenger Duel[]        @relation("duelChallengerWork")
+  duelsAsOpponent   Duel[]        @relation("duelOpponentWork")
+  duelAttempts      DuelAttempt[] @relation("duelAttemptWork")
 
   @@index([userId])
 }
@@ -556,15 +558,67 @@ model Duel {
   endsAt    DateTime?
   settledAt DateTime?
 
+  /// Nar utmanaren sett att inbjudan antagits.
+  ///
+  /// Finns bara for den grona bubblan pa Friends-fliken. Utan ett falt
+  /// som gar att kvittera skulle bubblan lysa hela kampen igenom, och en
+  /// notis som aldrig slocknar ar ingen notis — den ar en dekoration man
+  /// slutar se efter en dag.
+  acceptedSeenAt DateTime?
+
   /// null efter avgorande = oavgjort. Bada halls lika manga ord.
   winnerId String?
   winner   User?   @relation("duelWinner", fields: [winnerId], references: [id], onDelete: SetNull)
 
   result Json?
 
+  attempts DuelAttempt[]
+
   @@index([challengerId, status])
   @@index([opponentId, status])
   @@index([status, endsAt])
   @@index([challengerWorkId])
   @@index([opponentWorkId])
+}
+
+/// Ett framforande som raknas FOR TVEKAMPEN och for ingenting annat.
+///
+/// Egen tabell, inte en flagga pa Performance. Skalet ar att Performance
+/// bar mastartiteln: en rad dar drar XP, flyttar standing, tander eller
+/// slacker medaljer och kan skriva en milstolpe i vannernas flode. Ett
+/// tvekampsforsok ska gora inget av det. Med en flagga hade varje
+/// befintlig fraga behovt komma ihag att filtrera bort den, och den dagen
+/// nagon glommer det borjar en tvekamp dela ut mastartitlar.
+///
+/// SM-2 ror det inte heller. Ovningen som ger procenten i biblioteket och
+/// kampen som avgors pa klockan ar tva skilda saker, och det var sa det
+/// bestalldes: ingen traning allokeras till tvekampens siffra, och
+/// tvekampen flyttar inte inlarningskurvan.
+model DuelAttempt {
+  id     String @id @default(cuid())
+  duelId String
+  duel   Duel   @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  /// Vem som gjorde forsoket. Bada sidor skriver till samma tabell.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Den egna kopian forsoket gallde. SetNull — resultatet overlever att
+  /// verket raderas.
+  workId String?
+  work   Work?   @relation("duelAttemptWork", fields: [workId], references: [id], onDelete: SetNull)
+
+  /// 0-100, ur samma Levenshtein-jamforelse som allt annat i appen.
+  accuracy       Int
+  wordsTotal     Int      @default(0)
+  wordsCorrect   Int      @default(0)
+  durationSecs   Int      @default(0)
+  hesitations    Int      @default(0)
+  longestPauseMs Int?
+  missedWords    String[]
+
+  createdAt DateTime @default(now())
+
+  @@index([duelId, userId, wordsCorrect])
+  @@index([duelId, createdAt])
 }

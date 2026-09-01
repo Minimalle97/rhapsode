@@ -13,6 +13,7 @@
 // Det ar hela skalet till att den ar en klientkomponent: en tvekamp som
 // tar slut medan man sitter och ovar ska sagas till pa en gang.
 
+import Link from "next/link";
 import { useCountdown } from "./useCountdown";
 import { DuelResults } from "./DuelResults";
 
@@ -61,7 +62,7 @@ export function DuelBanner({
           Duel against {opponentName}
         </p>
         <p style={{ fontSize: "11.5px", color: "var(--muted)" }}>
-          Whoever holds the most words wins
+          Only duel performances count toward the score
           {toolsOnLoan && " · Pro tools are open on this work while it runs"}
         </p>
       </div>
@@ -80,6 +81,20 @@ export function DuelBanner({
           left
         </p>
       </div>
+
+      {/*
+        Vagen till det som faktiskt avgor kampen. Ovningen pa den har
+        sidan ger XP och flyttar inlarningskurvan, men den raknas inte i
+        tvekampen — utan lanken vore det latt att tro att den gjorde det.
+      */}
+      <Link href={`/duel/${duelId}`} style={{
+        padding: "8px 16px", borderRadius: "var(--r3)",
+        background: "var(--green)", border: "1px solid var(--green)",
+        color: "var(--bg)", fontSize: "12.5px",
+        textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0,
+      }}>
+        Duel performance
+      </Link>
     </div>
   );
 }

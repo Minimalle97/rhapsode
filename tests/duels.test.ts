@@ -22,8 +22,8 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), "utf8");
 function side(id: string, over: Partial<DuelSide> = {}): DuelSide {
   return {
     userId: id, username: id, handle: id, avatarUrl: null,
-    wordsHeld: 0, wordsPossible: 100, sectionsAttempted: 0, sectionsHeld: 0,
-    accuracy: 0, seconds: 0, attempts: 0, xp: 0,
+    wordsHeld: 0, wordsPossible: 100, accuracy: 0,
+    bestAt: null, attempts: 0, seconds: 0,
     ...over,
   };
 }
@@ -52,21 +52,32 @@ describe("who wins a duel", () => {
     expect(decideWinner(a, b)).toEqual({ winnerId: "a", margin: "accuracy" });
   });
 
-  it("falls to time only when words and accuracy are both level", () => {
-    const a = side("a", { wordsHeld: 80, accuracy: 90, seconds: 600 });
-    const b = side("b", { wordsHeld: 80, accuracy: 90, seconds: 900 });
-    expect(decideWinner(a, b)).toEqual({ winnerId: "b", margin: "time" });
+  it("falls to whoever got there first when words and accuracy are level", () => {
+    const a = side("a", { wordsHeld: 80, accuracy: 90, bestAt: "2026-01-01T10:00:00.000Z" });
+    const b = side("b", { wordsHeld: 80, accuracy: 90, bestAt: "2026-01-01T09:00:00.000Z" });
+    expect(decideWinner(a, b)).toEqual({ winnerId: "b", margin: "first" });
+  });
+
+  it("beats someone who never performed at all", () => {
+    // Lika pa noll ord ar oavgjort, men har HAR den ena stallt sig upp.
+    const a = side("a", { bestAt: "2026-01-01T10:00:00.000Z" });
+    const b = side("b");
+    expect(decideWinner(a, b)).toEqual({ winnerId: "a", margin: "first" });
+    expect(decideWinner(b, a)).toEqual({ winnerId: "a", margin: "first" });
   });
 
   it("is a draw when nothing separates them", () => {
-    const a = side("a", { wordsHeld: 50, accuracy: 88, seconds: 300 });
-    const b = side("b", { wordsHeld: 50, accuracy: 88, seconds: 300 });
+    const at = "2026-01-01T10:00:00.000Z";
+    const a = side("a", { wordsHeld: 50, accuracy: 88, bestAt: at });
+    const b = side("b", { wordsHeld: 50, accuracy: 88, bestAt: at });
     expect(decideWinner(a, b)).toEqual({ winnerId: null, margin: "draw" });
   });
 
   it("is a draw when neither did anything at all", () => {
-    // Tva som glomde bort kampen ska inte ge en vinnare pa slumpen.
+    // Tva som glomde bort kampen ska inte ge en vinnare pa slumpen — och
+    // sarskilt inte pa vems id som rakar sorteras forst.
     expect(decideWinner(side("a"), side("b"))).toEqual({ winnerId: null, margin: "draw" });
+    expect(decideWinner(side("b"), side("a"))).toEqual({ winnerId: null, margin: "draw" });
   });
 
   it("lets someone who did nothing lose to someone who did a little", () => {
@@ -78,9 +89,18 @@ describe("who wins a duel", () => {
   it("never lets time alone beat words", () => {
     // Att sitta lange framfor texten ar inte att kunna den. Ordningen
     // mellan kriterierna ar det som gor matningen arlig.
-    const grinder = side("grinder", { wordsHeld: 40, accuracy: 60, seconds: 7_200 });
-    const quick   = side("quick",   { wordsHeld: 41, accuracy: 99, seconds: 300 });
+    const grinder = side("grinder", { wordsHeld: 40, accuracy: 60, seconds: 7_200, attempts: 40 });
+    const quick   = side("quick",   { wordsHeld: 41, accuracy: 99, seconds: 300,  attempts: 1 });
     expect(decideWinner(grinder, quick).winnerId).toBe("quick");
+  });
+
+  it("ignores time and attempt count entirely", () => {
+    // Varken sekunder eller antal forsok far vara ett skiljetecken. Ett
+    // kriterium som beloner mangd gor kampen till en uthallighetsprovning.
+    const at = "2026-01-01T10:00:00.000Z";
+    const a  = side("a", { wordsHeld: 30, accuracy: 75, bestAt: at, seconds: 10,    attempts: 1 });
+    const b  = side("b", { wordsHeld: 30, accuracy: 75, bestAt: at, seconds: 9_999, attempts: 99 });
+    expect(decideWinner(a, b)).toEqual({ winnerId: null, margin: "draw" });
   });
 });
 
@@ -206,30 +226,85 @@ describe("settling a duel", () => {
   });
 });
 
-// ── Vad som mats ──────────────────────────────────────────────────────
-describe("what counts as words held", () => {
+// -- Vad som mats -----------------------------------------------------
+describe("what counts toward a duel", () => {
   const src = read("lib/duels.ts");
 
-  it("counts only attempts made with the text out of sight", () => {
-    // Att lasa med ar studier, inte ett prov. Rakas read in bevisar
-    // siffran ingenting.
-    expect(src).toMatch(/const TESTED_MODES = \["write", "recite"\]/);
+  it("measures duel attempts, not practice", () => {
+    // Ingen traning ska allokeras till tvekampens siffra. Laser matningen
+    // PracticeSession ar den regeln bruten vid kallan.
+    const fn   = src.slice(src.indexOf("export async function measureSide"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toMatch(/prisma\.duelAttempt/);
+    expect(body).not.toMatch(/practiceSession/);
+    expect(body).not.toMatch(/prisma\.section/);
   });
 
-  it("stays inside the duel's own window", () => {
-    // Utan tidsfonstret raknas allt man nagonsin gjort med texten, och
-    // den som ovat den i ett ar vinner varje kamp pa forhand.
-    expect(src).toMatch(/createdAt: \{ gte: from, lte: to \}/);
+  it("takes the best attempt, not the last and not the sum", () => {
+    expect(src).toMatch(/orderBy: \[\{ wordsCorrect: "desc" \}, \{ createdAt: "asc" \}\]/);
   });
 
-  it("takes the best attempt per section, not the sum", () => {
-    // Summan hade betytt att samma strof tio ganger slar en ny strof en
-    // gang, vilket beloner upprepning i stallet for kunnande.
-    expect(src).toMatch(/best = Math\.max\(best, Math\.min\(correct, possible\)\)/);
+  it("scopes every measurement to one duel and one person", () => {
+    expect(src).toMatch(/where:\s*\{ duelId, userId \}/);
+  });
+});
+
+describe("a duel attempt touches nothing else", () => {
+  const src  = read("lib/duels.ts");
+  const fn   = src.slice(src.indexOf("export async function recordDuelAttempt"));
+  const body = fn.slice(0, fn.indexOf("\nfunction clamp"));
+
+  it("awards no XP and moves no schedule", () => {
+    // Det ar hela skalet till att DuelAttempt ar en egen tabell. Skulle
+    // nagon av de har raderna dyka upp har borjar en tvekamp betala ut
+    // XP och flytta inlarningskurvan, vilket den inte ska.
+    for (const forbidden of [
+      "xp:", "increment", "sm2", "nextReview",
+      "practiceSession", "performance.create", "recordRun",
+      "checkAndAwardMedal", "recordMilestone", "recordPracticeSession",
+    ]) {
+      expect(body).not.toContain(forbidden);
+    }
   });
 
-  it("caps a section at the words it actually contains", () => {
-    expect(src).toMatch(/Math\.min\(correct, possible\)/);
+  it("writes only to duelAttempt", () => {
+    const writes = body.match(/prisma\.\w+\.(create|update|updateMany|upsert|delete)/g) ?? [];
+    expect(writes).toEqual(["prisma.duelAttempt.create"]);
+  });
+
+  it("grades against the text on the server, never the client's copy", () => {
+    // Skickade klienten originalet kunde man skicka in tva rader och
+    // bli bedomd mot dem.
+    expect(body).toMatch(/prisma\.section\.findMany/);
+    expect(body).toMatch(/gradeAttempt\(/);
+  });
+
+  it("refuses an attempt once the clock has run out", () => {
+    expect(body).toMatch(/endsAt\.getTime\(\) <= Date\.now\(\)/);
+  });
+
+  it("refuses an attempt on a duel that is not yours", () => {
+    expect(src).toMatch(/duelSideFor[\s\S]*?That duel isn't yours/);
+  });
+});
+
+// -- Notiserna --------------------------------------------------------
+describe("the bubbles on the Friends tab", () => {
+  const src = read("lib/duels.ts");
+
+  it("counts invitations waiting on you, not ones you sent", () => {
+    expect(src).toMatch(/opponentId: userId, status: "pending"/);
+  });
+
+  it("counts acceptances only until they have been seen", () => {
+    // Utan kvitteringen lyser den grona bubblan hela kampen igenom, och
+    // en notis som aldrig slocknar ar ingen notis.
+    expect(src).toMatch(/challengerId:\s+userId,\s*\n\s*status:\s+"active",\s*\n\s*acceptedSeenAt: null/);
+    expect(src).toMatch(/export async function markAcceptancesSeen/);
+  });
+
+  it("is cleared when the Friends page is actually opened", () => {
+    expect(read("app/(app)/friends/page.tsx")).toMatch(/markAcceptancesSeen\(user\.id\)/);
   });
 });
 

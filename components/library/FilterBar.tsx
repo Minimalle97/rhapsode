@@ -1,7 +1,13 @@
 "use client";
 // components/library/FilterBar.tsx
-// Fas 5: typ/svårighet (select), status (segmented control) och
-// taggar (chips) — alla skriver till URL-querystring.
+// Typ/svarighet (select) och status (segmented control) — alla skriver
+// till URL-querystring.
+//
+// Taggraden ar borttagen. Taggarna sattes av katalogiseringen, inte av
+// anvandaren, sa raden var en filtermeny over ord ingen valt: med tjugo
+// verk i biblioteket blev den trettio hashtaggar lang och nastan varje
+// filter tomde listan till ett enda verk. Perioden och temat star kvar
+// dar de hor hemma — pa verket sjalvt, som text.
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
@@ -25,11 +31,7 @@ const STATUSES: { value: string; label: string }[] = [
   { value: "mastered",    label: "Mastered" },
 ];
 
-interface FilterBarProps {
-  availableTags: string[];
-}
-
-export function FilterBar({ availableTags }: FilterBarProps) {
+export function FilterBar() {
   const router       = useRouter();
   const pathname      = usePathname();
   const searchParams = useSearchParams();
@@ -37,7 +39,6 @@ export function FilterBar({ availableTags }: FilterBarProps) {
   const type       = searchParams.get("type");
   const difficulty = searchParams.get("difficulty");
   const status     = searchParams.get("status");
-  const tag        = searchParams.get("tag");
 
   function setParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -50,10 +51,13 @@ export function FilterBar({ availableTags }: FilterBarProps) {
     setParam(key, searchParams.get(key) === value ? null : value);
   }
 
-  const hasFilters = Boolean(type || difficulty || status || tag || searchParams.get("q"));
+  const hasFilters = Boolean(type || difficulty || status || searchParams.get("q"));
 
   function clearAll() {
     const params = new URLSearchParams(searchParams.toString());
+    // "tag" rensas fortfarande bort. Filtret gar inte att satta langre,
+    // men en gammal bokmarkt adress kan bara det med sig, och da ska
+    // Clear filters gora rent aven fran den.
     ["q", "type", "difficulty", "status", "tag"].forEach((k) => params.delete(k));
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   }
@@ -101,16 +105,6 @@ export function FilterBar({ availableTags }: FilterBarProps) {
           </button>
         )}
       </div>
-
-      {availableTags.length > 0 && (
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          {availableTags.map((t) => (
-            <button key={t} onClick={() => toggle("tag", t)} style={tagStyle(tag === t)}>
-              #{t}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -143,19 +137,6 @@ function pillStyle(active: boolean): CSSProperties {
   };
 }
 
-function tagStyle(active: boolean): CSSProperties {
-  return {
-    padding:      "5px 12px",
-    borderRadius: "999px",
-    fontSize:     "12px",
-    cursor:       "pointer",
-    border:       active ? "1px solid var(--gold)" : "1px solid var(--bord)",
-    background:   active ? "var(--gold4)" : "var(--bg2)",
-    color:        active ? "var(--gold)" : "var(--parch2)",
-    fontFamily:   "var(--fb)",
-    transition:   "all .15s",
-  };
-}
 
 const clearStyle: CSSProperties = {
   background:    "none",

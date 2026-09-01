@@ -21,7 +21,7 @@ import { learningProgress } from "@/lib/performance";
 import { standingsForWorks } from "@/lib/performanceStore";
 import { duelBadgesForWorks } from "@/lib/duels";
 import { prisma } from "@/lib/db";
-import { buildWorkWhere, getDistinctTags, hasActiveFilters } from "@/lib/works";
+import { buildWorkWhere, hasActiveFilters } from "@/lib/works";
 import { WorkCard } from "@/components/library/WorkCard";
 import { SearchBar } from "@/components/library/SearchBar";
 import { FilterBar } from "@/components/library/FilterBar";
@@ -50,7 +50,7 @@ export default async function LibraryPage({ searchParams }: Props) {
     collectionId: str(sp.collection),
   };
 
-  const [works, allWorks, collectionRows] = await Promise.all([
+  const [works, totalWorks, collectionRows] = await Promise.all([
     prisma.work.findMany({
       where: buildWorkWhere(user.id, filters),
       select: {
@@ -69,7 +69,9 @@ export default async function LibraryPage({ searchParams }: Props) {
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.work.findMany({ where: { userId: user.id }, select: { tags: true } }),
+    // Bara antalet. Taggarna hamtades tidigare for taggfiltret; det ar
+    // borta, och da ska fragan vara det ocksa.
+    prisma.work.count({ where: { userId: user.id } }),
     prisma.collection.findMany({
       where:   { userId: user.id },
       include: { works: { select: { workId: true } } },
@@ -97,8 +99,7 @@ export default async function LibraryPage({ searchParams }: Props) {
     ])
   );
 
-  const availableTags = getDistinctTags(allWorks);
-  const hasAnyWorks   = allWorks.length > 0;
+  const hasAnyWorks   = totalWorks > 0;
   const filtersActive = hasActiveFilters(filters);
 
   const collections = collectionRows.map(c => ({
@@ -135,7 +136,7 @@ export default async function LibraryPage({ searchParams }: Props) {
             <SearchBar />
           </div>
           <div style={{ marginBottom: "28px" }}>
-            <FilterBar availableTags={availableTags} />
+            <FilterBar />
           </div>
         </Suspense>
       )}
@@ -157,13 +158,17 @@ export default async function LibraryPage({ searchParams }: Props) {
               work={work as never}
               collections={collections}
               memberCollectionIds={work.collections.map(c => c.collectionId)}
-              activeTag={filters.tag ?? null}
               progress={progressByWork.get(work.id) ?? 0}
               performanceMastered={standings.get(work.id)?.isMastered ?? false}
               masteryAtRisk={standings.get(work.id)?.standing === "at_risk"}
               duel={(() => {
                 const d = duelBadges.get(work.id);
-                return d ? { endsAt: d.endsAt.toISOString(), opponentName: d.opponentName } : null;
+                return d ? {
+                  id:           d.duelId,
+                  endsAt:       d.endsAt.toISOString(),
+                  opponentName: d.opponentName,
+                  best:         d.best,
+                } : null;
               })()}
             />
           ))}

@@ -22,7 +22,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
   createDuel, acceptDuel, settleDuel, duelBadgesForWorks,
-  duelEntitlements, measureSide, DuelError,
+  duelEntitlements, measureSide, recordDuelAttempt,
+  duelNotices, markAcceptancesSeen, DuelError,
 } from "@/lib/duels";
 import { entitlementsForPlan } from "@/lib/billing/entitlements";
 import { FEATURE } from "@/lib/billing/plans";
@@ -258,70 +259,113 @@ describe.skipIf(!HAS_DB)("a duel, end to end", () => {
     expect((await duelBadgesForWorks(opponentId, [other.id])).size).toBe(0);
   });
 
-  // ── Matningen ───────────────────────────────────────────────────────
+  // -- Matningen ------------------------------------------------------
 
   it("will not settle while the clock is still running", async () => {
     expect(await settleDuel(duelId)).toBeNull();
   });
 
-  it("counts the best graded attempt per section, inside the window only", async () => {
-    const duel = must(await prisma.duel.findUnique({ where: { id: duelId } }), "duel");
-    // Forsoken laggs pa startedAt exakt. Fonstret ar inklusivt i bada
-    // andar, och det ar det enda ogonblick som SAKERT ligger kvar innanfor
-    // aven efter att sluttiden flyttats bakat for att avgora kampen.
-    const mid    = must(duel.startedAt, "startedAt");
-    const before = new Date(mid.getTime() - 60 * 60_000);
-
-    const secs = await prisma.section.findMany({
-      where: { workId: opponentWorkId }, orderBy: { orderIndex: "asc" }, select: { id: true },
-    });
-
-    const attempt = (
-      sectionId: string, correct: number, total: number,
-      createdAt: Date, mode = "recite"
-    ) => ({
-      sectionId, mode, quality: 4, createdAt,
-      wordsCorrect: correct, wordsTotal: total, durationSecs: 60, xpEarned: 8,
-    });
-
-    await prisma.practiceSession.createMany({
-      data: [
-        // Sektion I: ett samre och ett battre forsok. Det BASTA raknas.
-        attempt(secs[0].id, 5,  11, mid),
-        attempt(secs[0].id, 11, 11, mid),
-        // Sektion II: ett forsok FORE kampen. Far inte raknas alls.
-        attempt(secs[1].id, 10, 10, before),
-        // Sektion III: last igenom, inte provat. "read" bevisar ingenting.
-        attempt(secs[2].id, 14, 14, mid, "read"),
-      ],
-    });
-
-    const m = await measureSide(opponentWorkId, mid, must(duel.endsAt, "endsAt"));
-
-    // Bara sektion I raknas: 11 ord.
-    expect(m.wordsHeld).toBe(11);
-    expect(m.sectionsAttempted).toBe(1);
-    expect(m.sectionsHeld).toBe(1);
-    expect(m.attempts).toBe(2);
-    expect(m.wordsPossible).toBe(TOTAL_WORDS);
+  it("starts both sides at nothing", async () => {
+    const mine = await measureSide(duelId, opponentId);
+    expect(mine.wordsHeld).toBe(0);
+    expect(mine.attempts).toBe(0);
+    expect(mine.bestAt).toBeNull();
   });
 
-  // ── Avgorandet ──────────────────────────────────────────────────────
+  it("ignores practice entirely, however much of it there is", async () => {
+    // Detta ar hela regeln: ingen traning allokeras till tvekampens
+    // siffra. Motstandaren ovar hela verket ordagrant, i de lagen som
+    // annars ar de striktaste, och kampen ska inte rora sig en millimeter.
+    const secs = await prisma.section.findMany({
+      where: { workId: opponentWorkId }, orderBy: { orderIndex: "asc" },
+      select: { id: true, content: true },
+    });
+
+    await prisma.practiceSession.createMany({
+      data: secs.map(sec => ({
+        sectionId:    sec.id,
+        mode:         "recite",
+        quality:      5,
+        wordsTotal:   sec.content.split(/\s+/).length,
+        wordsCorrect: sec.content.split(/\s+/).length,
+        durationSecs: 120,
+        xpEarned:     20,
+      })),
+    });
+
+    const after = await measureSide(duelId, opponentId);
+    expect(after.wordsHeld).toBe(0);
+    expect(after.attempts).toBe(0);
+  });
+
+  it("records a duel attempt and scores it against the real text", async () => {
+    // Halva verket, ordagrant: sektion I och II, inte III.
+    const said = `${SECTIONS[0].content} ${SECTIONS[1].content}`;
+
+    const r = await recordDuelAttempt({
+      duelId, userId: opponentId, transcript: said, durationSecs: 45,
+    });
+
+    expect(r.wordsTotal).toBe(TOTAL_WORDS);
+    expect(r.wordsCorrect).toBe(21);       // 11 + 10
+    expect(r.isBest).toBe(true);
+    expect(r.mine.wordsHeld).toBe(21);
+    expect(r.theirs.wordsHeld).toBe(0);
+  });
+
+  it("writes nothing but the attempt itself", async () => {
+    // Ingen XP, ingen SM-2-rorelse, ingen Performance-rad, ingen medalj.
+    const [xp, moved, performances, medals] = await Promise.all([
+      prisma.user.findUnique({ where: { id: opponentId }, select: { xp: true } }),
+      prisma.section.count({ where: { workId: opponentWorkId, status: { not: "not_started" } } }),
+      prisma.performance.count({ where: { userId: opponentId } }),
+      prisma.medal.count({ where: { userId: opponentId } }),
+    ]);
+
+    expect(xp?.xp).toBe(0);
+    expect(moved).toBe(0);
+    expect(performances).toBe(0);
+    expect(medals).toBe(0);
+  });
+
+  it("keeps the best attempt when a later one is worse", async () => {
+    await recordDuelAttempt({
+      duelId, userId: opponentId,
+      transcript: SECTIONS[0].content,   // bara 11 ord den har gangen
+      durationSecs: 20,
+    });
+
+    const m = await measureSide(duelId, opponentId);
+    expect(m.wordsHeld).toBe(21);   // det basta star kvar
+    expect(m.attempts).toBe(2);
+    expect(m.seconds).toBe(65);
+  });
+
+  it("refuses an attempt from someone not in the duel", async () => {
+    const stranger = await prisma.user.create({
+      data: { clerkId: `${MARK}_c`, username: "Stranger" },
+      select: { id: true },
+    });
+    await expect(
+      recordDuelAttempt({ duelId, userId: stranger.id, transcript: "anything" })
+    ).rejects.toThrow(/isn't yours/);
+  });
+
+  it("refuses an empty attempt", async () => {
+    await expect(
+      recordDuelAttempt({ duelId, userId: opponentId, transcript: "   " })
+    ).rejects.toThrow(/Nothing was picked up/);
+  });
+
+  // -- Avgorandet -----------------------------------------------------
 
   it("settles once the clock runs out, and names the right winner", async () => {
-    const duel = must(await prisma.duel.findUnique({ where: { id: duelId } }), "duel");
-    const mid  = must(duel.startedAt, "startedAt");
-
-    // Utmanaren haller mer: 11 + 10 = 21 mot motstandarens 11.
-    const mine = await prisma.section.findMany({
-      where: { workId }, orderBy: { orderIndex: "asc" }, select: { id: true },
+    // Utmanaren gor hela verket och slar darmed 21.
+    const whole = SECTIONS.map(s => s.content).join(" ");
+    const r = await recordDuelAttempt({
+      duelId, userId: challengerId, transcript: whole, durationSecs: 60,
     });
-    await prisma.practiceSession.createMany({
-      data: [
-        { sectionId: mine[0].id, mode: "write",  quality: 5, createdAt: mid, wordsCorrect: 11, wordsTotal: 11, durationSecs: 90, xpEarned: 10 },
-        { sectionId: mine[1].id, mode: "recite", quality: 5, createdAt: mid, wordsCorrect: 10, wordsTotal: 10, durationSecs: 90, xpEarned: 10 },
-      ],
-    });
+    expect(r.wordsCorrect).toBe(TOTAL_WORDS);
 
     // Flytta sluttiden bakat i stallet for att vanta en timme.
     await prisma.duel.update({
@@ -331,8 +375,8 @@ describe.skipIf(!HAS_DB)("a duel, end to end", () => {
 
     const result = must(await settleDuel(duelId), "a settled result");
 
-    expect(result.challenger.wordsHeld).toBe(21);
-    expect(result.opponent.wordsHeld).toBe(11);
+    expect(result.challenger.wordsHeld).toBe(TOTAL_WORDS);
+    expect(result.opponent.wordsHeld).toBe(21);
     expect(result.winnerId).toBe(challengerId);
     expect(result.margin).toBe("words");
 
@@ -340,6 +384,12 @@ describe.skipIf(!HAS_DB)("a duel, end to end", () => {
     expect(row.status).toBe("finished");
     expect(row.winnerId).toBe(challengerId);
     expect(row.settledAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses a further attempt once the duel is over", async () => {
+    await expect(
+      recordDuelAttempt({ duelId, userId: opponentId, transcript: SECTIONS[0].content })
+    ).rejects.toThrow(/over|Time is up/);
   });
 
   it("gives the winner a battle medal, and the loser none", async () => {
@@ -369,7 +419,7 @@ describe.skipIf(!HAS_DB)("a duel, end to end", () => {
   it("gives the same answer when settled again, and no second medal", async () => {
     const again = must(await settleDuel(duelId), "the frozen result");
     expect(again.winnerId).toBe(challengerId);
-    expect(again.challenger.wordsHeld).toBe(21);
+    expect(again.challenger.wordsHeld).toBe(TOTAL_WORDS);
 
     expect(await prisma.medal.count({ where: { duelId } })).toBe(1);
   });
@@ -391,5 +441,36 @@ describe.skipIf(!HAS_DB)("a duel, end to end", () => {
 
   it("drops the badge once the duel is finished", async () => {
     expect((await duelBadgesForWorks(opponentId, [opponentWorkId])).size).toBe(0);
+  });
+
+  // -- Notiserna på Friends-fliken ------------------------------------
+
+  it("counts a waiting invitation for the person who must answer", async () => {
+    const fresh = await createDuel({
+      challengerId, ent: PRO, opponentId, workId, minutes: 10,
+    });
+
+    expect((await duelNotices(opponentId)).invites).toBe(1);
+    // Utmanaren har inget att svara pa — deras egen inbjudan ar ingen notis.
+    expect((await duelNotices(challengerId)).invites).toBe(0);
+
+    await prisma.duel.delete({ where: { id: fresh.id } });
+  });
+
+  it("turns green for the challenger once it is accepted, until seen", async () => {
+    const fresh = await createDuel({
+      challengerId, ent: PRO, opponentId, workId, minutes: 10,
+    });
+    expect((await duelNotices(challengerId)).accepted).toBe(0);
+
+    await acceptDuel(fresh.id, opponentId);
+    expect((await duelNotices(challengerId)).accepted).toBe(1);
+    // Och den inbjudne har inget kvar att svara pa.
+    expect((await duelNotices(opponentId)).invites).toBe(0);
+
+    await markAcceptancesSeen(challengerId);
+    expect((await duelNotices(challengerId)).accepted).toBe(0);
+
+    await prisma.duel.delete({ where: { id: fresh.id } });
   });
 });

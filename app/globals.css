@@ -147,6 +147,55 @@ button, input, select, textarea {
   background: var(--gold3);
 }
 
+/* ── Notisbubblor pa flikarna ──────────────────────────────────────
+   Guld = nagon vantar pa ditt svar. Gron = nagon sa ja till dig.
+   Fargerna ar appens egna; ingen ny fard infors for notiser. */
+.nav-tab { position: relative; }
+
+.nav-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.1em;
+}
+.nav-dot-invite {
+  background: var(--gold);
+  color: var(--bg);
+}
+.nav-dot-accepted {
+  background: var(--green);
+  color: var(--bg);
+}
+
+@media (max-width: 720px) {
+  /*
+    I mobilens tabbrad star etiketten centrerad och det finns ingen bredd
+    att lagga en bubbla bredvid den. Den flyttas darfor upp i hornet och
+    tappar siffran — pa en flik som anda bara har tva sorters notiser
+    sager punkten allt man behover veta: det finns nagot dar.
+  */
+  .nav-dot {
+    position: absolute;
+    top: 8px;
+    min-width: 8px;
+    height: 8px;
+    padding: 0;
+    margin: 0;
+    font-size: 0;
+    overflow: hidden;
+  }
+  .nav-dot-invite   { right: calc(50% - 26px); }
+  .nav-dot-accepted { right: calc(50% - 38px); }
+}
+
 /* ── Rank-remsa på mobil ───────────────────────────────────────── */
 .rank-strip {
   align-items: center;

@@ -156,9 +156,14 @@ function Running({ duel, viewerId }: { duel: DuelCard; viewerId: string }) {
       {done ? (
         <DuelResults duelId={duel.id} workTitle={duel.workTitle} viewerId={viewerId} />
       ) : duel.myWorkId ? (
-        <Link href={`/work/${duel.myWorkId}`} style={primary}>
-          Go and learn it
-        </Link>
+        <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
+          <Link href={`/duel/${duel.id}`} style={primary}>
+            Duel performance
+          </Link>
+          <Link href={`/work/${duel.myWorkId}`} style={ghost}>
+            Practise it
+          </Link>
+        </div>
       ) : (
         <p style={sub}>That work has been removed.</p>
       )}

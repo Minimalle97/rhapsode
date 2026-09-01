@@ -22,7 +22,6 @@ interface WorkCardProps {
   work:                 WorkCardWork;
   collections:          Collection[];
   memberCollectionIds:  string[];
-  activeTag?:           string | null;
   /** 0-100. Rors redan vid forsta passet, inte forst nar en sektion ar klar. */
   progress:             number;
   /** Tio godkanda framforanden, och titeln star kvar. Ger den roda ramen. */
@@ -30,11 +29,17 @@ interface WorkCardProps {
   /** Bemastrad men inte framford pa ett tag. */
   masteryAtRisk:        boolean;
   /** Satt nar verket star i en tvekamp. Ger den grona ramen och bubblan. */
-  duel?:                { endsAt: string; opponentName: string } | null;
+  duel?: {
+    id:           string;
+    endsAt:       string;
+    opponentName: string;
+    /** Ditt basta framforande i kampen. null innan du gjort nagot. */
+    best:         { wordsHeld: number; wordsPossible: number; accuracy: number } | null;
+  } | null;
 }
 
 export function WorkCard({
-  work, collections, memberCollectionIds, activeTag,
+  work, collections, memberCollectionIds,
   progress, performanceMastered, masteryAtRisk, duel = null,
 }: WorkCardProps) {
   const total    = work.sections.length;
@@ -56,7 +61,11 @@ export function WorkCard({
     <div style={{ position: "relative" }}>
       <Link href={`/work/${work.id}`} style={{ textDecoration: "none" }}>
         <div
-          style={{ ...cardStyle, borderColor: border }}
+          style={{
+            ...cardStyle,
+            borderColor: border,
+            ...(duel ? { borderRadius: "var(--r) var(--r) 0 0" } : {}),
+          }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = hover)}
           onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = border)}
         >
@@ -71,14 +80,21 @@ export function WorkCard({
           <h3 style={titleStyle}>{work.title}</h3>
           <p style={authorStyle}>{work.author}</p>
 
+          {/*
+            Perioden, formen, temat — samma uppgifter som forut, men som
+            text i stallet for hashtaggar.
+
+            De var aldrig taggar i den mening en hashtagg antyder: de sattes
+            av katalogiseringen (period, form, sprak, tema — se
+            lib/aiMetadata.ts), inte av anvandaren, och ingen skrev dem for
+            att gruppera nagot. En brandgul #victorian ser ut som ett filter
+            man kan trycka pa, och att lova det utan att mena det ar samre
+            an att bara saga vad texten ar.
+          */}
           {work.tags.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" }}>
-              {work.tags.map((tag) => (
-                <span key={tag} style={cardTagStyle(tag === activeTag)}>
-                  #{tag}
-                </span>
-              ))}
-            </div>
+            <p style={metaStyle}>
+              {work.tags.map(titleCase).join(" · ")}
+            </p>
           )}
 
           {/*
@@ -122,6 +138,38 @@ export function WorkCard({
         </div>
       </Link>
 
+      {/*
+        Tvekampsrutan. Syskon till <Link>, inte barn — en lank inuti en
+        lank ar ogiltig uppmarkning och gor att fel sida oppnas.
+
+        Star UNDER kortet i stallet for inuti, sa att den grona ramen
+        omsluter bade verket och kampen: det ar ett stalle, inte tva.
+      */}
+      {duel && (
+        <div style={duelBoxStyle}>
+          <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+            <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "2px" }}>
+              vs {duel.opponentName}
+            </p>
+            {duel.best ? (
+              <p style={{ fontSize: "12.5px", color: "var(--green)" }}>
+                Best {duel.best.wordsHeld}
+                {duel.best.wordsPossible > 0 && `/${duel.best.wordsPossible}`} words
+                <span style={{ color: "var(--muted)" }}> · {duel.best.accuracy}%</span>
+              </p>
+            ) : (
+              <p style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+                Not performed yet
+              </p>
+            )}
+          </div>
+
+          <Link href={`/duel/${duel.id}`} style={duelBtnStyle}>
+            {duel.best ? "Perform again" : "Duel performance"}
+          </Link>
+        </div>
+      )}
+
       {/* Ligger som syskon till <Link>, inte ett barn — undviker knapp-i-länk */}
       <div style={{ position: "absolute", top: "16px", right: "14px" }}>
         <AddToCollectionMenu workId={work.id} collections={collections} memberIds={memberCollectionIds} />
@@ -162,13 +210,40 @@ const authorStyle: CSSProperties = {
   marginBottom: "14px",
 };
 
-function cardTagStyle(active: boolean): CSSProperties {
-  return {
-    fontSize:     "10.5px",
-    padding:      "2px 8px",
-    borderRadius: "999px",
-    border:       active ? "1px solid var(--gold)" : "1px solid var(--bord)",
-    color:        active ? "var(--gold)" : "var(--muted)",
-    background:   active ? "var(--gold4)" : "transparent",
-  };
+const metaStyle: CSSProperties = {
+  fontSize:      "11.5px",
+  color:         "var(--muted)",
+  letterSpacing: "0.02em",
+  marginBottom:  "14px",
+  lineHeight:    1.5,
+};
+
+const duelBoxStyle: CSSProperties = {
+  display:      "flex",
+  alignItems:   "center",
+  gap:          "10px",
+  flexWrap:     "wrap",
+  marginTop:    "-1px",           // moter kortets ram utan dubbel linje
+  padding:      "11px 14px",
+  background:   "rgba(106,158,106,0.07)",
+  border:       `1px solid ${DUEL_BORDER}`,
+  borderTop:    "none",
+  borderRadius: "0 0 var(--r) var(--r)",
+};
+
+const duelBtnStyle: CSSProperties = {
+  padding:        "7px 14px",
+  borderRadius:   "var(--r3)",
+  background:     "var(--green)",
+  border:         "1px solid var(--green)",
+  color:          "var(--bg)",
+  fontSize:       "12px",
+  textDecoration: "none",
+  whiteSpace:     "nowrap",
+  flexShrink:     0,
+};
+
+/** "victorian" → "Victorian". Katalogiseringen skriver gemener. */
+function titleCase(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
 }

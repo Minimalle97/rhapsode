@@ -26,7 +26,7 @@ interface Props {
 const MARGIN_TEXT: Record<DuelResult["margin"], string> = {
   words:    "Decided on words held.",
   accuracy: "Level on words. Decided on accuracy.",
-  time:     "Level on words and accuracy. Decided on time at the text.",
+  first:    "Level on words and accuracy. Decided on who got there first.",
   draw:     "Level on every count. Both keep a medal.",
 };
 
@@ -107,9 +107,9 @@ export function DuelResults({ duelId, workTitle, viewerId, initial = null }: Pro
         fontSize: "11px", color: "var(--muted)", lineHeight: 1.6,
         marginTop: "18px", paddingTop: "14px", borderTop: "1px solid var(--bord)",
       }}>
-        Words held is the best graded attempt on each section, added up. Only
-        attempts where the text was out of sight count — writing it out or
-        reciting it, not reading along.
+        Words held is the best duel performance — the whole work, spoken from
+        memory, in one go. Practice earns XP and moves your library progress as
+        always, but none of it counts here. Only what you stood up and said does.
       </p>
     </div>
   );
@@ -144,11 +144,10 @@ function Column({
         words held{side.wordsPossible > 0 && ` · ${pct}%`}
       </p>
 
-      <Row label="Accuracy" value={`${side.accuracy}%`} align={align} />
-      <Row label="Sections held" value={`${side.sectionsHeld}/${side.sectionsAttempted}`} align={align} />
-      <Row label="At the text" value={minutes(side.seconds)} align={align} />
-      <Row label="Attempts" value={String(side.attempts)} align={align} />
-      <Row label="XP" value={side.xp.toLocaleString()} align={align} />
+      <Row label="Accuracy"    value={`${side.accuracy}%`} align={align} />
+      <Row label="Performances" value={String(side.attempts)} align={align} />
+      <Row label="Time spent"  value={minutes(side.seconds)} align={align} />
+      <Row label="Best set"    value={when(side.bestAt)} align={align} />
     </div>
   );
 }
@@ -164,6 +163,12 @@ function Row({ label, value, align }: { label: string; value: string; align: "le
       <span style={{ color: "var(--parch2)" }}>{value}</span>
     </div>
   );
+}
+
+/** Klockslaget for det basta forsoket. Tomt streck nar det inte finns. */
+function when(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function minutes(secs: number): string {

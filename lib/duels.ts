@@ -9,19 +9,23 @@
 //
 // ── Vad som mats ──────────────────────────────────────────────────────
 //
-// "Den som memorerat mest" raknas som ORD SOM HALLS, vilket ar samma
-// matt appen redan visar efter varje forsok ("32 of 40 words held").
-// For varje sektion tas det basta rattade forsoket inom tidsfonstret,
-// och de summeras.
+// BARA tvekampsforsok. Ett tvekampsforsok ar ett framforande av hela
+// verket ur minnet, gjort via rostlaget fran tvekampssidan.
 //
-// Det ar avsiktligt inte SM-2-status. En tio minuters tvekamp hinner
-// aldrig flytta en sektion till "mastered" — intervallet kraver veckor —
-// sa ett matt byggt pa status hade gett 0–0 i varje kort kamp. Det som
-// mats ar vad man faktiskt kunde aterge, nar man provades.
+// Ovningen raknas inte. Ovar man for att lara sig ger det XP och flyttar
+// inlarningskurvan i biblioteket; det ar en annan sak an att stalla sig
+// upp och visa vad man kan, och kampen mater bara det senare. Ingen
+// traning allokeras till tvekampens siffra, och tvekampen ror inte SM-2.
 //
-// Rattningen ar densamma som overallt annars: lib/cue.ts, Levenshtein pa
-// ordniva, ingen modell inblandad. En vinnare som en sprakmodell utsett
-// hade varken gatt att reproducera eller att lita pa.
+// Det ar avsiktligt inte heller SM-2-status. En tio minuters tvekamp
+// hinner aldrig flytta en sektion till "mastered" — intervallet kraver
+// veckor — sa ett matt byggt pa status hade gett 0–0 i varje kort kamp.
+//
+// Siffran som avgor ar ORD SOM HALLS i det basta forsoket, vilket ar
+// samma matt appen redan visar efter ett framforande ("32 of 40 words
+// held"). Rattningen ar densamma som overallt annars: lib/cue.ts,
+// Levenshtein pa ordniva, ingen modell inblandad. En vinnare som en
+// sprakmodell utsett hade varken gatt att reproducera eller att lita pa.
 //
 // ── Vem som far bjuda in ──────────────────────────────────────────────
 //
@@ -36,6 +40,8 @@ import { prisma } from "./db";
 import { entitlementsForPlan, type Entitlements } from "./billing/entitlements";
 import { friendState } from "./friends";
 import { recordMilestone } from "./posts";
+import { gradeAttempt } from "./cue";
+import { accuracyPercent } from "./mastery";
 
 // ── Langderna ─────────────────────────────────────────────────────────
 
@@ -89,22 +95,18 @@ export interface DuelSide {
   username:  string;
   handle:    string | null;
   avatarUrl: string | null;
-  /** Summan av basta rattade forsok per sektion. Det som avgor. */
+  /** Ord som satt i det BASTA tvekampsforsoket. Det som avgor. */
   wordsHeld:     number;
   /** Hur manga ord verket bestar av. Samma for bada — samma text. */
   wordsPossible: number;
-  /** Sektioner dar minst ett rattat forsok gjorts. */
-  sectionsAttempted: number;
-  /** Sektioner dar 90 % eller mer av orden satt. */
-  sectionsHeld:      number;
-  /** Medelvarde over alla rattade forsok, 0-100. Forsta skiljetecknet. */
+  /** Traffsakerheten i samma basta forsok, 0-100. Forsta skiljetecknet. */
   accuracy:  number;
-  /** Sekunder ovade i fonstret. Andra skiljetecknet. */
-  seconds:   number;
-  /** Antal rattade forsok. Visas, avgor inget. */
+  /** Nar det basta forsoket gjordes. Andra skiljetecknet. */
+  bestAt:    string | null;
+  /** Antal tvekampsforsok. Visas, avgor inget. */
   attempts:  number;
-  /** XP tjanat i fonstret. Visas, avgor inget. */
-  xp:        number;
+  /** Sekunder tillbringade i tvekampslaget. Visas, avgor inget. */
+  seconds:   number;
 }
 
 export interface DuelResult {
@@ -113,94 +115,62 @@ export interface DuelResult {
   /** null = oavgjort. */
   winnerId:   string | null;
   /** Vad som skilde dem at. For en rad text i resultatet. */
-  margin:     "words" | "accuracy" | "time" | "draw";
-}
-
-/** Sektioner dar 90 % av orden satt raknas som hallna. */
-const HELD_THRESHOLD = 0.9;
-
-/** Lagen dar texten INTE ligger framme. Bara de bevisar nagot. */
-const TESTED_MODES = ["write", "recite"];
-
-function wordCount(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
+  margin:     "words" | "accuracy" | "first" | "draw";
 }
 
 /**
- * Hur mycket en person holl av sitt verk inom ett tidsfonster.
+ * Hur mycket en person holl, matt PA TVEKAMPSFORSOKEN och ingenting annat.
  *
- * Basta forsok per sektion, inte senaste och inte summan. Skalet: den som
- * kan en strof ska inte kunna oka sin siffra genom att skriva av den tio
- * ganger, och den som just testat en svarare vinkel ska inte straffas for
- * att det gick samre an gangen innan. Basta forsoket ar det narmaste ett
- * svar pa "hur mycket av det har kan du".
+ * ── Varfor inte ovningshistoriken ────────────────────────────────────
+ *
+ * Den forsta versionen raknade write- och recite-pass inom tidsfonstret.
+ * Det var fel av tva skal.
+ *
+ * Ingen traning ska allokeras till tvekampens siffra. Ovar man for att
+ * lara sig ska det ge XP och flytta inlarningskurvan; det ar en annan sak
+ * an att stalla sig upp och visa vad man kan. Blandas de blir kampen en
+ * matning av hur mycket man klickat.
+ *
+ * Och sektionsvis matning gick att spela: den som ovade en strof i taget
+ * kunde samla ihop en hog totalsumma utan att nagon gang ha hallit hela
+ * texten i huvudet samtidigt. Ett framforande av HELA verket kan inte
+ * delas upp sa.
+ *
+ * Basta forsoket galler, inte det senaste och inte summan. Den som redan
+ * visat vad de kan ska inte kunna forlora det pa ett daligt sista forsok,
+ * och tio medelmattiga forsok ska inte slå ett bra.
  */
 export async function measureSide(
-  workId: string | null,
-  from:   Date,
-  to:     Date
+  duelId: string,
+  userId: string
 ): Promise<Omit<DuelSide, "userId" | "username" | "handle" | "avatarUrl">> {
-  const empty = {
-    wordsHeld: 0, wordsPossible: 0, sectionsAttempted: 0,
-    sectionsHeld: 0, accuracy: 0, seconds: 0, attempts: 0, xp: 0,
-  };
-  if (!workId) return empty;
+  const [rows, aggregate] = await Promise.all([
+    prisma.duelAttempt.findMany({
+      where:   { duelId, userId },
+      // Flest ord forst; vid lika vinner det som gjordes FORST. Det ar
+      // samma regel som decideWinner anvander mellan tva personer, och
+      // den maste galla inom en person ocksa — annars kan `bestAt` peka
+      // pa ett senare forsok som inte var battre.
+      orderBy: [{ wordsCorrect: "desc" }, { createdAt: "asc" }],
+      take: 1,
+      select: { wordsCorrect: true, wordsTotal: true, accuracy: true, createdAt: true },
+    }),
+    prisma.duelAttempt.aggregate({
+      where:  { duelId, userId },
+      _count: { _all: true },
+      _sum:   { durationSecs: true },
+    }),
+  ]);
 
-  const sections = await prisma.section.findMany({
-    where:  { workId },
-    select: {
-      id: true, content: true,
-      practiceSessions: {
-        where: {
-          createdAt: { gte: from, lte: to },
-          mode:      { in: TESTED_MODES },
-          // Ograderade forsok bar ingen siffra att jamfora.
-          wordsTotal: { not: null },
-        },
-        select: {
-          wordsCorrect: true, wordsTotal: true,
-          durationSecs: true, xpEarned: true,
-        },
-      },
-    },
-  });
-  if (sections.length === 0) return empty;
-
-  let wordsHeld = 0, wordsPossible = 0;
-  let sectionsAttempted = 0, sectionsHeld = 0;
-  let seconds = 0, attempts = 0, xp = 0;
-  let accuracySum = 0;
-
-  for (const s of sections) {
-    const possible = wordCount(s.content);
-    wordsPossible += possible;
-
-    let best = 0;
-    for (const p of s.practiceSessions) {
-      const correct = p.wordsCorrect ?? 0;
-      const total   = p.wordsTotal   ?? 0;
-
-      // Ett forsok kan inte ge fler hallna ord an sektionen har. Utan
-      // taket skulle en trasig rad kunna blasa upp summan.
-      best = Math.max(best, Math.min(correct, possible));
-
-      if (total > 0) accuracySum += Math.min(100, Math.round((correct / total) * 100));
-      attempts += 1;
-      seconds  += p.durationSecs;
-      xp       += p.xpEarned;
-    }
-
-    if (s.practiceSessions.length > 0) {
-      sectionsAttempted += 1;
-      wordsHeld += best;
-      if (possible > 0 && best / possible >= HELD_THRESHOLD) sectionsHeld += 1;
-    }
-  }
+  const best = rows[0];
 
   return {
-    wordsHeld, wordsPossible, sectionsAttempted, sectionsHeld,
-    accuracy: attempts > 0 ? Math.round(accuracySum / attempts) : 0,
-    seconds, attempts, xp,
+    wordsHeld:     best?.wordsCorrect ?? 0,
+    wordsPossible: best?.wordsTotal   ?? 0,
+    accuracy:      best?.accuracy     ?? 0,
+    bestAt:        best?.createdAt.toISOString() ?? null,
+    attempts:      aggregate._count._all,
+    seconds:       aggregate._sum.durationSecs ?? 0,
   };
 }
 
@@ -208,8 +178,12 @@ export async function measureSide(
  * Vem som vann, och pa vad.
  *
  * Ren funktion, sa att regeln gar att prova utan en databas. Ordningen ar
- * fast: ord forst, sedan tratsakerhet, sedan tid. Lika pa alla tre ar
- * oavgjort, och da far bada medaljen — se `settleDuel`.
+ * fast: ord forst, sedan traffsakerhet, sedan vem som kom dit forst.
+ *
+ * Det sista kriteriet ar med flit inte "mest tid vid texten". Att sitta
+ * lange ar inte att kunna nagot, och ett kriterium som beloner tid gor
+ * kampen till en uthallighetsprovning. Kom ni lika langt vinner den som
+ * kom dit forst.
  */
 export function decideWinner(a: DuelSide, b: DuelSide): { winnerId: string | null; margin: DuelResult["margin"] } {
   if (a.wordsHeld !== b.wordsHeld) {
@@ -218,8 +192,15 @@ export function decideWinner(a: DuelSide, b: DuelSide): { winnerId: string | nul
   if (a.accuracy !== b.accuracy) {
     return { winnerId: a.accuracy > b.accuracy ? a.userId : b.userId, margin: "accuracy" };
   }
-  if (a.seconds !== b.seconds) {
-    return { winnerId: a.seconds > b.seconds ? a.userId : b.userId, margin: "time" };
+
+  // Ingen av dem stallde sig upp alls. Da har ingen visat nagot, och det
+  // ar oavgjort — inte en seger till den som rakar ha ett tidigare id.
+  if (a.bestAt === null && b.bestAt === null) return { winnerId: null, margin: "draw" };
+  if (a.bestAt === null) return { winnerId: b.userId, margin: "first" };
+  if (b.bestAt === null) return { winnerId: a.userId, margin: "first" };
+
+  if (a.bestAt !== b.bestAt) {
+    return { winnerId: a.bestAt < b.bestAt ? a.userId : b.userId, margin: "first" };
   }
   return { winnerId: null, margin: "draw" };
 }
@@ -472,8 +453,8 @@ export async function settleDuel(duelId: string): Promise<DuelResult | null> {
   if (duel.endsAt.getTime() > Date.now()) return null; // klockan gar an
 
   const [cStats, oStats] = await Promise.all([
-    measureSide(duel.challengerWorkId, duel.startedAt, duel.endsAt),
-    measureSide(duel.opponentWorkId,   duel.startedAt, duel.endsAt),
+    measureSide(duel.id, duel.challengerId),
+    measureSide(duel.id, duel.opponentId),
   ]);
 
   const challenger: DuelSide = { ...duel.challenger, userId: duel.challenger.id, ...cStats };
@@ -504,6 +485,144 @@ export async function settleDuel(duelId: string): Promise<DuelResult | null> {
   }, winnerId);
 
   return result;
+}
+
+// ── Tvekampsforsoket ──────────────────────────────────────────────────
+
+export interface DuelAttemptResult {
+  accuracy:     number;
+  wordsTotal:   number;
+  wordsCorrect: number;
+  missed:       string[];
+  /** Sant nar forsoket slog det tidigare basta. */
+  isBest:       boolean;
+  /** Laget efter forsoket: mitt basta mot deras. */
+  mine:         { wordsHeld: number; wordsPossible: number; accuracy: number; attempts: number };
+  theirs:       { wordsHeld: number; accuracy: number; attempts: number };
+}
+
+/**
+ * Den egna sidan av en pagaende tvekamp — verk, motstandare, klocka.
+ *
+ * Kastar hellre an returnerar null, sa att varje anropare far ett
+ * meddelande att visa i stallet for att behova gissa vad som gick fel.
+ */
+export async function duelSideFor(duelId: string, userId: string) {
+  const duel = await prisma.duel.findUnique({
+    where: { id: duelId },
+    select: {
+      id: true, status: true, startedAt: true, endsAt: true, workTitle: true,
+      workAuthor: true, durationMinutes: true,
+      challengerId: true, opponentId: true,
+      challengerWorkId: true, opponentWorkId: true,
+      challenger: { select: { id: true, username: true, handle: true, avatarUrl: true } },
+      opponent:   { select: { id: true, username: true, handle: true, avatarUrl: true } },
+    },
+  });
+  if (!duel) throw new DuelError("No such duel.", 404);
+
+  const mine = duel.challengerId === userId;
+  if (!mine && duel.opponentId !== userId) {
+    throw new DuelError("That duel isn't yours.", 403);
+  }
+
+  return {
+    duel,
+    myWorkId: mine ? duel.challengerWorkId : duel.opponentWorkId,
+    other:    mine ? duel.opponent : duel.challenger,
+    otherId:  mine ? duel.opponentId : duel.challengerId,
+  };
+}
+
+/**
+ * Skriver ned ett tvekampsforsok.
+ *
+ * Vad den medvetet INTE gor: ingen XP, ingen SM-2, ingen PracticeSession,
+ * ingen Performance-rad, ingen medalj, ingen milstolpe, ingen streak.
+ * Ett forsok har raknas for kampen och for ingenting annat — det var sa
+ * det bestalldes, och det ar ocksa det enda satt pa vilket kampen kan
+ * mata nagot som ovningen inte redan mater.
+ *
+ * Texten hamtas pa servern ur den egna kopian. Klienten skickar sitt
+ * transkript, aldrig originalet — annars hade man kunnat skicka in en
+ * kortare text att bedomas mot och kopa segern for tva rader.
+ */
+export async function recordDuelAttempt(params: {
+  duelId:     string;
+  userId:     string;
+  transcript: string;
+  durationSecs?:   number;
+  hesitations?:    number;
+  longestPauseMs?: number;
+}): Promise<DuelAttemptResult> {
+  const { duelId, userId, transcript } = params;
+
+  const { duel, myWorkId, otherId } = await duelSideFor(duelId, userId);
+
+  if (duel.status !== "active") {
+    throw new DuelError(
+      duel.status === "pending"
+        ? "That duel hasn't been accepted yet."
+        : "That duel is over.",
+      409
+    );
+  }
+  if (!duel.endsAt || duel.endsAt.getTime() <= Date.now()) {
+    throw new DuelError("Time is up. Ask for the result.", 409);
+  }
+  if (!myWorkId) throw new DuelError("Your copy of that work is gone.", 410);
+  if (!transcript.trim()) throw new DuelError("Nothing was picked up.", 400);
+
+  const sections = await prisma.section.findMany({
+    where:   { workId: myWorkId },
+    orderBy: { orderIndex: "asc" },
+    select:  { content: true },
+  });
+  if (sections.length === 0) throw new DuelError("There is nothing to perform.", 400);
+
+  const graded  = gradeAttempt(sections.map(s => s.content).join("\n\n"), transcript);
+  const total   = graded.diff.length;
+  const correct = graded.diff.filter(d => d.correct).length;
+
+  const before = await measureSide(duelId, userId);
+
+  await prisma.duelAttempt.create({
+    data: {
+      duelId, userId, workId: myWorkId,
+      accuracy:       accuracyPercent(correct, total),
+      wordsTotal:     total,
+      wordsCorrect:   correct,
+      durationSecs:   clamp(params.durationSecs),
+      hesitations:    clamp(params.hesitations),
+      longestPauseMs: params.longestPauseMs === undefined ? null : clamp(params.longestPauseMs),
+      missedWords:    graded.missed.slice(0, 24).map(w => String(w).slice(0, 40)),
+    },
+  });
+
+  const [mine, theirs] = await Promise.all([
+    measureSide(duelId, userId),
+    measureSide(duelId, otherId),
+  ]);
+
+  return {
+    accuracy:     accuracyPercent(correct, total),
+    wordsTotal:   total,
+    wordsCorrect: correct,
+    missed:       graded.missed,
+    isBest:       correct > before.wordsHeld,
+    mine: {
+      wordsHeld: mine.wordsHeld, wordsPossible: mine.wordsPossible,
+      accuracy:  mine.accuracy,  attempts: mine.attempts,
+    },
+    theirs: {
+      wordsHeld: theirs.wordsHeld, accuracy: theirs.accuracy, attempts: theirs.attempts,
+    },
+  };
+}
+
+function clamp(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 /**
@@ -562,12 +681,66 @@ async function awardBattleMedals(
 
 // ── Vad granssnittet fragar om ────────────────────────────────────────
 
+// ── Notiser pa Friends-fliken ─────────────────────────────────────────
+
+export interface DuelNotices {
+  /** Inbjudningar som vantar pa ditt svar. Guld bubbla. */
+  invites:  number;
+  /** Inbjudningar DU skickat som nyss antagits. Gron bubbla. */
+  accepted: number;
+}
+
+/**
+ * Vad som ska lysa pa Friends-fliken.
+ *
+ * Tva olika bubblor, for att de betyder olika saker och kraver olika
+ * svar. En inbjudan vantar pa DIG och slocknar nar du svarar. Ett antaget
+ * ja ar en nyhet — kampen har borjat och klockan gar — och den slocknar
+ * nar du sett den, inte nar kampen ar over. En notis som lyser i sju
+ * dagar ar ingen notis, den ar en dekoration man slutar se.
+ *
+ * Rakningen ar tva count-fragor, inte en lista som kastas bort. Den kors
+ * i layouten vid varje sidladdning.
+ */
+export async function duelNotices(userId: string): Promise<DuelNotices> {
+  const [invites, accepted] = await Promise.all([
+    prisma.duel.count({
+      where: { opponentId: userId, status: "pending" },
+    }),
+    prisma.duel.count({
+      where: {
+        challengerId:   userId,
+        status:         "active",
+        acceptedSeenAt: null,
+      },
+    }),
+  ]);
+
+  return { invites, accepted };
+}
+
+/**
+ * Kvitterar de grona bubblorna.
+ *
+ * Anropas nar utmanaren faktiskt oppnat Friends-sidan, inte nar de
+ * hovrar over fliken. `updateMany` utan las: att kvittera tva ganger
+ * kostar inget och kan inte bli fel.
+ */
+export async function markAcceptancesSeen(userId: string): Promise<void> {
+  await prisma.duel.updateMany({
+    where: { challengerId: userId, status: "active", acceptedSeenAt: null },
+    data:  { acceptedSeenAt: new Date() },
+  });
+}
+
 export interface DuelBadge {
   duelId:    string;
   /** Sant sa lange klockan gar. Falskt nar tiden ar ute men obestamd. */
   running:   boolean;
   endsAt:    Date;
   opponentName: string;
+  /** Ditt basta framforande hittills. null innan du gjort nagot. */
+  best:      { wordsHeld: number; wordsPossible: number; accuracy: number } | null;
 }
 
 /**
@@ -600,14 +773,32 @@ export async function duelBadgesForWorks(
   });
 
   const now = Date.now();
+
+  // Basta forsoket per kamp, for alla kamper pa en gang. En groupBy i
+  // stallet for en fraga per kort — biblioteket far inte bli langsammare
+  // for att man rakar sta i tva tvekamper.
+  const bests = await prisma.duelAttempt.groupBy({
+    by:    ["duelId"],
+    where: { duelId: { in: rows.map(r => r.id) }, userId },
+    _max:  { wordsCorrect: true, accuracy: true, wordsTotal: true },
+  });
+  const bestByDuel = new Map(bests.map(b => [b.duelId, b._max]));
+
   for (const r of rows) {
     const mine = r.challengerId === userId ? r.challengerWorkId : r.opponentWorkId;
     if (!mine || !r.endsAt) continue;
+
+    const max = bestByDuel.get(r.id);
     badges.set(mine, {
       duelId:       r.id,
       running:      r.endsAt.getTime() > now,
       endsAt:       r.endsAt,
       opponentName: r.challengerId === userId ? r.opponent.username : r.challenger.username,
+      best: max?.wordsCorrect === null || max === undefined ? null : {
+        wordsHeld:     max.wordsCorrect ?? 0,
+        wordsPossible: max.wordsTotal   ?? 0,
+        accuracy:      max.accuracy     ?? 0,
+      },
     });
   }
 
