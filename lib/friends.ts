@@ -5,6 +5,7 @@
 
 import { prisma } from "./db";
 import { wornBorders } from "./repertoire";
+import { duelsWithPeople } from "./duels";
 
 export type FriendState =
   | "none"
@@ -28,6 +29,14 @@ export interface FriendCard {
   since:        Date | null;
   /** Gruppbarden de bar, eller null. Avgjort pa servern. */
   border:       string | null;
+  /**
+   * Tvekampen som pagar med just den har personen, eller null.
+   *
+   * Fanns tidigare inte i listan alls, sa en pagaende kamp gick bara att
+   * se pa verket. Man kunde sta och titta rakt pa sin motstandare utan
+   * att nagonstans fa veta att man var mitt i nagot med dem.
+   */
+  duel: { id: string; status: "pending" | "active"; endsAt: string | null } | null;
 }
 
 /** Relationen mellan två användare, sedd från den förstas håll. */
@@ -86,13 +95,23 @@ export async function listFriends(userId: string): Promise<FriendCard[]> {
     },
   });
 
-  const others  = rows.map(r => (r.requesterId === userId ? r.addressee : r.requester));
-  // En fraga for alla bardar, inte en per rad.
-  const borders = await wornBorders(others.map(o => o.id));
+  const others = rows.map(r => (r.requesterId === userId ? r.addressee : r.requester));
+  const ids    = others.map(o => o.id);
+
+  // En fraga for alla bardar och en for alla tvekamper, inte tva per rad.
+  const [borders, duels] = await Promise.all([
+    wornBorders(ids),
+    duelsWithPeople(userId, ids),
+  ]);
 
   return rows.map(r => {
     const other = r.requesterId === userId ? r.addressee : r.requester;
-    return toCard(other, r.id, r.respondedAt, borders.get(other.id) ?? null);
+    const d     = duels.get(other.id);
+    return toCard(
+      other, r.id, r.respondedAt,
+      borders.get(other.id) ?? null,
+      d ? { id: d.id, status: d.status, endsAt: d.endsAt?.toISOString() ?? null } : null
+    );
   });
 }
 
@@ -142,11 +161,13 @@ function toCard(
   u: ProfileRow,
   friendshipId: string,
   since: Date | null,
-  border: string | null = null
+  border: string | null = null,
+  duel: FriendCard["duel"] = null
 ): FriendCard {
   return {
     id:         u.id,
     border,
+    duel,
     handle:     u.handle,
     username:   u.username,
     avatarUrl:  u.avatarUrl,

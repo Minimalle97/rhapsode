@@ -67,16 +67,24 @@ export function EntryList({ entries }: { entries: EntryRow[] }) {
         </div>
       )}
 
-      <p style={{
+      <div style={{
         fontSize: "11.5px", color: "var(--muted)", lineHeight: 1.7,
         marginTop: "22px", paddingTop: "16px", borderTop: "1px solid var(--bord)",
       }}>
-        Links open a search of that archive, not a fixed page — so they keep working
-        when an archive moves things, but the first result is not always the right
-        one. Roughly everything written before about 1930 is public domain and can be
-        downloaded outright; most of what comes after can be read and copied for
-        private study but not redistributed.
-      </p>
+        <p style={{ marginBottom: "10px" }}>
+          Links open a search of that archive, not a fixed page — so they keep working
+          when an archive moves things, but the first result is not always the right
+          one. Roughly everything written before about 1930 is public domain and can be
+          downloaded outright; most of what comes after can be read and copied for
+          private study but not redistributed.
+        </p>
+        <p>
+          <strong style={{ color: "var(--parch2)" }}>If a link is dead</strong>, search
+          the title and author yourself — the text is almost always still out there
+          under a different address. Archives reorganise without warning, and we fix
+          broken links as fast as we find them, so it is worth reporting one you hit.
+        </p>
+      </div>
     </div>
   );
 }

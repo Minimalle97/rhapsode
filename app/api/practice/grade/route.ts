@@ -29,6 +29,7 @@ import { runAi } from "@/lib/ai/run";
 import { asDocument, parseJsonBlock, UNTRUSTED_INPUT_RULE } from "@/lib/anthropic";
 import { accuracyPercent } from "@/lib/mastery";
 import { duelEntitlementsForSection } from "@/lib/duels";
+import { recordAttempt } from "@/lib/weakSpots";
 
 const CUES: CueLevel[] = ["full", "firstWord", "initials", "skeleton", "hidden"];
 
@@ -72,6 +73,17 @@ export async function POST(req: NextRequest) {
     const quality = scoreToQuality(graded.score, cue);
     const total   = graded.diff.length;
     const correct = graded.diff.filter(d => d.correct).length;
+
+    // Var texten foll bort. Skrivs HAR, dar rattningen redan gjorts och
+    // `diff` finns radad efter originalets ordfoljd — inte nar texten
+    // lases. Lasvyn ska bara sla upp ett fardigt svar.
+    //
+    // Ett fel far inte falla ovningen: markeringen ar en hjalp, och att
+    // ett pass misslyckas for att en hjalp inte gick att spara vore fel
+    // ordning pa sakerna.
+    await recordAttempt(section.id, graded.diff).catch(err => {
+      console.error("Could not record weak spots:", err);
+    });
 
     const result = {
       score:    graded.score,

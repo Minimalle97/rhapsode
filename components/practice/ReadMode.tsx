@@ -1,9 +1,16 @@
 "use client";
 // components/practice/ReadMode.tsx
 // Fas 8: enklaste läget — läs texten, skatta dig själv.
+//
+// Texten ritas av SectionText, samma renderare som laslaget under
+// /work/<id>/read anvander. Den hade tidigare en egen <p> med pre-wrap,
+// vilket rackte sa lange den enda uppgiften var att visa raderna — men
+// tva renderare hade betytt att en pjas kunde brytas pa ett satt har och
+// ett annat dar, och att rollangivelser bara syntes i den ena.
 
 import type { CSSProperties } from "react";
 import { QualityRating } from "./QualityRating";
+import { SectionText } from "@/components/reading/SectionText";
 
 interface ReadModeProps {
   content:    string;
@@ -13,21 +20,14 @@ interface ReadModeProps {
 export function ReadMode({ content, onComplete }: ReadModeProps) {
   return (
     <div>
-      <p style={textStyle}>{content}</p>
+      <div style={{ marginBottom: "28px" }}>
+        <SectionText content={content} size="compact" />
+      </div>
       <p style={promptStyle}>How well do you know this?</p>
       <QualityRating onRate={onComplete} />
     </div>
   );
 }
-
-const textStyle: CSSProperties = {
-  fontFamily: "var(--fd)",
-  fontSize:   "20px",
-  lineHeight: 1.7,
-  color:      "var(--parch)",
-  marginBottom: "28px",
-  whiteSpace: "pre-wrap",
-};
 
 const promptStyle: CSSProperties = {
   fontSize:     "12px",

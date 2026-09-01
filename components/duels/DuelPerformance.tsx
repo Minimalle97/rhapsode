@@ -58,12 +58,24 @@ const LANGUAGES = [
 /** Tystnad langre an sa har raknas som en tvekan. Samma som PerformanceMode. */
 const HESITATION_MS = 3_000;
 
+/**
+ * Vad som ritas.
+ *
+ * Samma rattning som i PerformanceMode, av samma skal: vyn villkorades
+ * pa speech.isActive, och `speech.stop()` satter det till falskt synkront.
+ * Ett tryck pa Finish kastade darfor tillbaka en till startlaget medan
+ * anropet fortfarande var i luften — mitt i en tvekamp, dar det sag ut
+ * som att forsoket gatt forlorat.
+ */
+type Phase = "idle" | "performing" | "review" | "marking" | "scored";
+
 export function DuelPerformance({
   duelId, workTitle, author, sectionCount,
   endsAt, opponentName, mine: initialMine, theirs: initialTheirs,
 }: Props) {
   const router = useRouter();
-  const [lang, setLang] = useState("en-US");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [lang, setLang]   = useState("en-US");
   const speech = useSpeechRecitation({ lang });
 
   const [mine, setMine]     = useState(initialMine);
@@ -99,6 +111,12 @@ export function DuelPerformance({
     if (done && speech.isActive) speech.stop();
   }, [done, speech]);
 
+  // Ger motorn upp av sig sjalv — nekad mikrofon, ingen enhet — ska det
+  // man redan sagt tas till vara i stallet for att forsvinna.
+  useEffect(() => {
+    if (phase === "performing" && !speech.isActive) setPhase("review");
+  }, [phase, speech.isActive]);
+
   function begin() {
     setResult(null);
     setError(null);
@@ -108,19 +126,41 @@ export function DuelPerformance({
     lastWordAt.current  = Date.now();
     speech.reset();
     speech.start();
+    setPhase("performing");
   }
 
-  async function finish() {
+  /** Slutar tala. Skickar ingenting — det ar ett eget beslut. */
+  function stopSpeaking() {
     speech.stop();
+    setPhase("review");
+  }
 
-    const transcript = speech.transcript.trim();
+  /**
+   * Det som faktiskt sagts, interimtexten inraknad.
+   *
+   * Chrome hinner inte alltid gora sista frasen slutgiltig innan stop(),
+   * och utan den tappades slutet av varje forsok — i en tvekamp betyder
+   * det forlorade ord i den siffra som avgor.
+   */
+  function spoken(): string {
+    return [speech.transcript, speech.interimTranscript]
+      .filter(t => t && t.trim())
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async function submit() {
+    const transcript = spoken();
     if (!transcript) {
       setError("Nothing was picked up. Check the microphone and try again.");
+      setPhase("review");
       return;
     }
 
     setSending(true);
     setError(null);
+    setPhase("marking");
     try {
       const res = await fetch(`/api/duels/${duelId}/attempt`, {
         method:  "POST",
@@ -138,10 +178,13 @@ export function DuelPerformance({
       setResult(data as AttemptResult);
       setMine(data.mine);
       setTheirs(data.theirs);
+      setPhase("scored");
       // Biblioteket visar samma siffra i den grona rutan.
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not mark that");
+      // Tillbaka till granskningen, inte till borjan: forsoket finns kvar.
+      setPhase("review");
     } finally {
       setSending(false);
     }
@@ -165,7 +208,7 @@ export function DuelPerformance({
   }
 
   // ── Efterat ─────────────────────────────────────────────────────
-  if (result) {
+  if (phase === "scored" && result) {
     return (
       <div>
         <p style={{ ...eyebrow, color: result.isBest ? "var(--green)" : "var(--muted)" }}>
@@ -201,7 +244,7 @@ export function DuelPerformance({
   }
 
   // ── Under tiden ─────────────────────────────────────────────────
-  if (speech.isActive) {
+  if (phase === "performing") {
     return (
       <div>
         <p style={eyebrow}>
@@ -236,9 +279,68 @@ export function DuelPerformance({
           <p style={{ fontSize: "12px", color: "var(--red)", marginBottom: "14px" }}>{speech.error}</p>
         )}
 
-        <button onClick={finish} disabled={sending} style={stopBtn}>
-          {sending ? "Marking…" : "Finish"}
+        <button onClick={stopSpeaking} style={stopBtn}>
+          Finish
         </button>
+      </div>
+    );
+  }
+
+  // ── Efter stoppet, innan man skickar ────────────────────────────
+  if (phase === "review" || phase === "marking") {
+    const said  = spoken();
+    const words = said ? said.split(/\s+/).length : 0;
+    const busy  = phase === "marking";
+
+    return (
+      <div>
+        <p style={{ ...eyebrow, color: busy ? "var(--gold)" : "var(--green)" }}>
+          {busy ? "Marking…" : "Recorded"}
+        </p>
+        <p style={{
+          fontFamily: "var(--fd)", fontSize: "26px", fontWeight: 300,
+          color: "var(--parch)", marginBottom: "20px",
+        }}>
+          {workTitle}
+        </p>
+
+        <div style={liveBox}>
+          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--green)", lineHeight: 1 }}>
+            {words}
+          </p>
+          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+            words captured
+          </p>
+          {said && (
+            <p style={tailStyle}>
+              …{said.split(/\s+/).slice(-14).join(" ")}
+            </p>
+          )}
+        </div>
+
+        {error && (
+          <p style={{ fontSize: "12.5px", color: "var(--red)", marginBottom: "14px" }}>{error}</p>
+        )}
+
+        {busy ? (
+          <p style={{ fontSize: "13px", color: "var(--muted)" }}>
+            Comparing it against the text…
+          </p>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button onClick={submit} disabled={!said} style={{ ...primaryBtn, opacity: said ? 1 : 0.45 }}>
+                Count this attempt
+              </button>
+              <button onClick={begin} style={stopBtn}>Start over</button>
+            </div>
+            <p style={{ fontSize: "11.5px", color: "var(--bg4)", marginTop: "16px", lineHeight: 1.6 }}>
+              {said
+                ? "Nothing counts toward the duel until you send it. Your best attempt stands."
+                : "Nothing was picked up. Check the microphone and start over."}
+            </p>
+          </>
+        )}
       </div>
     );
   }

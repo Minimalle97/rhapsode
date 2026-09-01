@@ -53,10 +53,21 @@ const LANGUAGES = [
 /** Tystnad langre an sa har raknas som en tvekan. */
 const HESITATION_MS = 3_000;
 
+/**
+ * idle      — innan man borjat
+ * performing — motorn lyssnar
+ * review    — man har slutat tala; texten ligger och vantar pa att skickas
+ * marking   — anropet ar i luften
+ * done      — resultatet visas
+ */
+type Phase = "idle" | "performing" | "review" | "marking" | "done";
+
 export function PerformanceMode({
   workId, workTitle, author, partId, partName,
   sectionCount, standing, passAccuracy, isPro,
 }: PerformanceModeProps) {
+  // Vad som ritas. Aldrig speech.isActive — se kommentaren vid begin().
+  const [phase, setPhase]   = useState<Phase>("idle");
   const [lang, setLang]     = useState("en-US");
   const speech = useSpeechRecitation({ lang });
 
@@ -89,6 +100,30 @@ export function PerformanceMode({
     if (speech.isActive) noteSpeech();
   }, [speech.transcript, speech.interimTranscript, speech.isActive, noteSpeech]);
 
+  // Motorn kan ge upp av sig sjalv — nekad mikrofon, ingen enhet. Da ska
+  // det man redan sagt tas till vara i stallet for att forsvinna: vyn gar
+  // till granskningen, dar felet syns och texten gar att skicka anda.
+  useEffect(() => {
+    if (phase === "performing" && !speech.isActive) setPhase("review");
+  }, [phase, speech.isActive]);
+
+  /**
+   * Allt som ratas ut styrs av `phase`, aldrig av `speech.isActive`.
+   *
+   * ── RATTAT: Finish kastade tillbaka en till startlaget ───────────────
+   *
+   * Vyn villkorades tidigare pa speech.isActive. `speech.stop()` satter
+   * det till falskt SYNKRONT, sa i samma ogonblick man tryckte Finish föll
+   * komponenten igenom till Begin-skarmen — medan anropet fortfarande var
+   * i luften. Det sag ut som att framforandet plotsligt tog slut och att
+   * inspelningen kastats bort, och stod inspelningen tom hamnade man
+   * likaledes pa Begin, nu med ett felmeddelande ingen hann lasa.
+   *
+   * Motorn far darfor inte langre bestamma vad som visas. Stoppet leder
+   * till ett EGET lage dar det man sagt ligger kvar och vantar pa att
+   * skickas — samma tvastegsform som ReciteMode redan hade, och skalet
+   * till att det laget alltid kants stadigare an det har.
+   */
   function begin() {
     setResult(null);
     setError(null);
@@ -98,19 +133,41 @@ export function PerformanceMode({
     lastWordAt.current  = Date.now();
     speech.reset();
     speech.start();
+    setPhase("performing");
   }
 
-  async function finish() {
+  /** Slutar tala. Skickar ingenting — det ar ett eget beslut. */
+  function stopSpeaking() {
     speech.stop();
+    setPhase("review");
+  }
 
-    const transcript = speech.transcript.trim();
+  /**
+   * Det som faktiskt sagts.
+   *
+   * Interimtexten raknas med. Chrome hinner inte alltid gora sista
+   * frasen slutgiltig innan stop(), och utan den tappades de sista orden
+   * i varje framforande — vilket sag ut som att man missat slutet.
+   */
+  function spoken(): string {
+    return [speech.transcript, speech.interimTranscript]
+      .filter(t => t && t.trim())
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async function submit() {
+    const transcript = spoken();
     if (!transcript) {
       setError("Nothing was picked up. Check the microphone and try again.");
+      setPhase("review");
       return;
     }
 
     setSending(true);
     setError(null);
+    setPhase("marking");
     try {
       const res = await fetch("/api/performance", {
         method:  "POST",
@@ -127,8 +184,12 @@ export function PerformanceMode({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not record that");
       setResult(data as RunResult);
+      setPhase("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record that");
+      // Tillbaka till granskningen, inte till borjan: det man sagt finns
+      // kvar och gar att skicka igen.
+      setPhase("review");
     } finally {
       setSending(false);
     }
@@ -143,7 +204,7 @@ export function PerformanceMode({
   }
 
   // ── Efterat ─────────────────────────────────────────────────────
-  if (result) {
+  if (phase === "done" && result) {
     const s = result.standing;
     return (
       <div>
@@ -222,7 +283,7 @@ export function PerformanceMode({
   }
 
   // ── Under tiden ─────────────────────────────────────────────────
-  if (speech.isActive) {
+  if (phase === "performing") {
     return (
       <div>
         <p style={eyebrow}>
@@ -259,9 +320,72 @@ export function PerformanceMode({
           <p style={{ fontSize: "12px", color: "var(--red)", marginBottom: "14px" }}>{speech.error}</p>
         )}
 
-        <button onClick={finish} disabled={sending} style={stopBtn}>
-          {sending ? "Marking…" : "Finish"}
+        <button onClick={stopSpeaking} style={stopBtn}>
+          Finish
         </button>
+      </div>
+    );
+  }
+
+  // ── Efter stoppet, innan man skickar ────────────────────────────
+  //
+  // Laget som saknades. Utan det foll man tillbaka till Begin i samma
+  // ogonblick som motorn stangdes av, och det man just sagt sag ut att
+  // vara borta.
+  if (phase === "review" || phase === "marking") {
+    const said  = spoken();
+    const words = said ? said.split(/\s+/).length : 0;
+    const busy  = phase === "marking";
+
+    return (
+      <div>
+        <p style={{ ...eyebrow, color: busy ? "var(--gold)" : "var(--parch2)" }}>
+          {busy ? "Marking…" : "Recorded"}
+        </p>
+        <p style={{
+          fontFamily: "var(--fd)", fontSize: "26px", fontWeight: 300,
+          color: "var(--parch)", marginBottom: "20px",
+        }}>
+          {partName ?? workTitle}
+        </p>
+
+        <div style={liveBox}>
+          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--gold)", lineHeight: 1 }}>
+            {words}
+          </p>
+          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+            words captured
+          </p>
+          {said && (
+            <p style={tailStyle}>
+              …{said.split(/\s+/).slice(-14).join(" ")}
+            </p>
+          )}
+        </div>
+
+        {error && (
+          <p style={{ fontSize: "12.5px", color: "var(--red)", marginBottom: "14px" }}>{error}</p>
+        )}
+
+        {busy ? (
+          <p style={{ fontSize: "13px", color: "var(--muted)" }}>
+            Comparing it against the text…
+          </p>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button onClick={submit} disabled={!said} style={{ ...primaryBtn, opacity: said ? 1 : 0.45 }}>
+                Mark this performance
+              </button>
+              <button onClick={begin} style={ghostBtn}>Start over</button>
+            </div>
+            <p style={{ fontSize: "11.5px", color: "var(--bg4)", marginTop: "16px", lineHeight: 1.6 }}>
+              {said
+                ? "Nothing is counted until you mark it."
+                : "Nothing was picked up. Check the microphone and start over."}
+            </p>
+          </>
+        )}
       </div>
     );
   }

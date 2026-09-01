@@ -168,6 +168,7 @@ model Section {
   createdAt DateTime @default(now())
 
   practiceSessions PracticeSession[]
+  weakness         SectionWeakness?
 
   @@index([workId, orderIndex])
   @@index([partId, orderIndex])
@@ -671,4 +672,41 @@ model GroupAward {
 
   @@unique([userId, groupId])
   @@index([userId])
+}
+
+/// Var i en sektion anvandaren faktiskt brukar tappa texten.
+///
+/// ── Varfor en rad per sektion och inte en per ord ─────────────────────
+///
+/// En sektion har sextio ord och ovas hundratals ganger. En rad per ord
+/// hade betytt sextio skrivningar per forsok, i den hetaste vagen i hela
+/// appen. Har ligger allt i ETT falt och uppdateras med en upsert.
+///
+/// ── Varfor position och inte ordet i sig ──────────────────────────────
+///
+/// "the" star tio ganger i en strof. Sparades svagheten pa ordet skulle
+/// ett enda missat "the" tanda alla tio. Nyckeln ar darfor ordets PLATS i
+/// sektionen, vilket ocksa ar precis vad lib/cue.ts redan raknar fram:
+/// dess `diff` ar radad efter originalets ordfoljd.
+///
+/// ── Varfor flyttal och inte raknare ───────────────────────────────────
+///
+/// Varje nytt forsok dampar det gamla innan det laggs till. Foljden ar
+/// att siffran beskriver hur minnet ar NU och inte hur det en gang var:
+/// en rad man missade tio ganger i mars slutar lysa efter en handfull
+/// rena genomforanden, och tander igen den dag den borjar glida. Utan
+/// dampningen hade en tidig svacka markt raden for alltid.
+model SectionWeakness {
+  id        String  @id @default(cuid())
+  sectionId String  @unique
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  /// { "<ordets plats>": [missar, forsok, senastMissad] }
+  /// Missar och forsok ar dampade flyttal; tidpunkten ar millisekunder.
+  words Json
+
+  /// Dampat antal rattade forsok pa hela sektionen. Under ett par stycken
+  /// visas ingenting alls — se lib/weakSpots.ts.
+  attempts  Float    @default(0)
+  updatedAt DateTime @updatedAt
 }

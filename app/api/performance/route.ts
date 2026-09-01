@@ -15,6 +15,7 @@ import { prisma } from "@/lib/db";
 import { gradeAttempt } from "@/lib/cue";
 import { recordRun } from "@/lib/performanceStore";
 import { accuracyPercent } from "@/lib/mastery";
+import { recordWholeWorkAttempt } from "@/lib/weakSpots";
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,6 +63,13 @@ export async function POST(req: NextRequest) {
       const lost = words.filter(w => missedSet.has(w)).length;
       return lost / words.length > 0.5;
     }).length;
+
+    // Ett framforande ur minnet ar det strangaste provet appen har, sa
+    // det som foll bort dar vager tyngst av allt. Rattningen gjordes mot
+    // sektionerna hopfogade i ordning, och delas upp igen pa samma satt.
+    await recordWholeWorkAttempt(sections, graded.diff).catch(err => {
+      console.error("Could not record weak spots:", err);
+    });
 
     const result = await recordRun({
       userId: user.id,

@@ -249,6 +249,9 @@ export default async function WorkPage({ params, searchParams }: Props) {
             <Link href={`/work/${work.id}/edit`} style={headerBtn}>
               Clean up
             </Link>
+            <Link href={`/work/${work.id}/read`} style={headerBtn}>
+              Read it through
+            </Link>
             <Link href={`/work/${work.id}/recite`} style={headerBtn}>
               Recite to a beat
             </Link>

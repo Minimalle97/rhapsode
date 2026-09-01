@@ -28,9 +28,20 @@ interface Props {
   opponentName: string;
   /** Sant nar betraktaren far bjuda in. Servern kontrollerar det igen. */
   canInvite:    boolean;
+  /**
+   * Kampen som redan pagar med den har personen, eller null.
+   *
+   * Utan den erbjod knappen en ny utmaning till nagon man redan slogs
+   * mot. Servern avvisade den, men forst efter att man tryckt — och
+   * ingenstans pa profilen stod det att man var mitt i nagot med dem.
+   */
+  duel: {
+    id: string; status: "pending" | "active"; mine: boolean;
+    workTitle: string; endsAt: string | null;
+  } | null;
 }
 
-export function DuelInvite({ opponentId, opponentName, canInvite }: Props) {
+export function DuelInvite({ opponentId, opponentName, canInvite, duel }: Props) {
   const router = useRouter();
 
   const [open, setOpen]         = useState(false);
@@ -94,6 +105,37 @@ export function DuelInvite({ opponentId, opponentName, canInvite }: Props) {
         <p style={{ fontSize: "13px", color: "var(--green)" }}>
           Challenge sent. It starts when {opponentName} accepts.
         </p>
+      </div>
+    );
+  }
+
+  // Redan i en kamp med dem: sag det, och peka dit i stallet.
+  if (duel) {
+    const active = duel.status === "active";
+    return (
+      <div style={{ ...panel, marginTop: "8px", padding: "13px 15px" }}>
+        <p style={{ fontSize: "13px", color: "var(--green)", marginBottom: "3px" }}>
+          ⚔ {active
+            ? `You are in a duel with ${opponentName}`
+            : duel.mine
+              ? `Waiting for ${opponentName} to answer`
+              : `${opponentName} has challenged you`}
+        </p>
+        <p style={{ fontSize: "11.5px", color: "var(--muted)", marginBottom: active ? "11px" : "0" }}>
+          {duel.workTitle}
+          {active && duel.endsAt && ` · ends ${new Date(duel.endsAt).toLocaleString([], {
+            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+          })}`}
+        </p>
+        {active ? (
+          <Link href={`/duel/${duel.id}`} style={{ ...primary, padding: "7px 14px", fontSize: "12.5px" }}>
+            Go to the duel
+          </Link>
+        ) : (
+          <Link href="/friends" style={{ fontSize: "11.5px", color: "var(--gold)" }}>
+            Answer it on Friends →
+          </Link>
+        )}
       </div>
     );
   }

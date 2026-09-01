@@ -42,6 +42,7 @@ import { friendState } from "./friends";
 import { recordMilestone } from "./posts";
 import { gradeAttempt } from "./cue";
 import { accuracyPercent } from "./mastery";
+import { recordWholeWorkAttempt } from "./weakSpots";
 
 // ── Langderna ─────────────────────────────────────────────────────────
 
@@ -576,13 +577,19 @@ export async function recordDuelAttempt(params: {
   const sections = await prisma.section.findMany({
     where:   { workId: myWorkId },
     orderBy: { orderIndex: "asc" },
-    select:  { content: true },
+    select:  { id: true, content: true },
   });
   if (sections.length === 0) throw new DuelError("There is nothing to perform.", 400);
 
   const graded  = gradeAttempt(sections.map(s => s.content).join("\n\n"), transcript);
   const total   = graded.diff.length;
   const correct = graded.diff.filter(d => d.correct).length;
+
+  // Ett tvekampsforsok ger varken XP eller SM-2 — men det ar riktig
+  // atergivning ur minnet, och var texten foll ar lika sant dar som
+  // nagon annanstans. Svagheten ar en hjalp at anvandaren, inte en del
+  // av kampens rakning, sa den bryter inte regeln ovan.
+  await recordWholeWorkAttempt(sections, graded.diff).catch(() => {});
 
   const before = await measureSide(duelId, userId);
 
@@ -731,6 +738,64 @@ export async function markAcceptancesSeen(userId: string): Promise<void> {
     where: { challengerId: userId, status: "active", acceptedSeenAt: null },
     data:  { acceptedSeenAt: new Date() },
   });
+}
+
+/**
+ * Tvekamperna mellan anvandaren och var och en av dessa personer.
+ *
+ * En fraga for hela vanlistan, inte en per rad.
+ *
+ * Finns for att en pagaende kamp tidigare bara gick att se pa verket. Var
+ * i granssnittet man an motte sin motstandare — i listan, pa deras profil
+ * — stod det ingenting om att man var mitt i nagot med dem, och det ar
+ * dar man ar nar man tanker pa dem.
+ */
+export interface DuelWith {
+  id:       string;
+  status:   "pending" | "active";
+  endsAt:   Date | null;
+  /** Sant nar det ar DU som skickade inbjudan. */
+  mine:     boolean;
+  workTitle: string;
+}
+
+export async function duelsWithPeople(
+  userId:   string,
+  otherIds: string[]
+): Promise<Map<string, DuelWith>> {
+  const out = new Map<string, DuelWith>();
+  if (otherIds.length === 0) return out;
+
+  const rows = await prisma.duel.findMany({
+    where: {
+      status: { in: LIVE },
+      OR: [
+        { challengerId: userId, opponentId:   { in: otherIds } },
+        { opponentId:   userId, challengerId: { in: otherIds } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, status: true, endsAt: true, workTitle: true,
+      challengerId: true, opponentId: true,
+    },
+  });
+
+  for (const r of rows) {
+    const mine  = r.challengerId === userId;
+    const other = mine ? r.opponentId : r.challengerId;
+    // Nyast forst i sorteringen ovan, sa den forsta traffen far sta.
+    if (out.has(other)) continue;
+    out.set(other, {
+      id:        r.id,
+      status:    r.status as "pending" | "active",
+      endsAt:    r.endsAt,
+      mine,
+      workTitle: r.workTitle,
+    });
+  }
+
+  return out;
 }
 
 export interface DuelBadge {

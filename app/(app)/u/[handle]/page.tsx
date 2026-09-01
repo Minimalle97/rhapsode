@@ -15,6 +15,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { friendState, resolveHandle } from "@/lib/friends";
 import { wornBorders } from "@/lib/repertoire";
+import { duelsWithPeople } from "@/lib/duels";
 import { Avatar } from "@/components/profile/Avatar";
 import { sharedLibrary } from "@/lib/sharedLibrary";
 import { postsBy, canSeePosts } from "@/lib/posts";
@@ -83,6 +84,11 @@ export default async function PublicProfile({ params }: Props) {
   // Barden de bar. Kontrollen av att de FAR bara den — gruppen klar,
   // lasset oppnat, prenumerationen aktiv — sitter i wornBorders.
   const border = (await wornBorders([person.id])).get(person.id) ?? null;
+
+  // Star ni i en tvekamp ska knappen saga det. Att erbjuda en utmaning
+  // till nagon man redan slass mot ar bade fel och forvirrande — servern
+  // avvisar den anda, men det ska inte behova ga sa langt.
+  const duel = (await duelsWithPeople(viewer.id, [person.id])).get(person.id) ?? null;
 
   const rank     = getRank(person.xp);
   const next     = getNextRank(person.xp);
@@ -160,6 +166,13 @@ export default async function PublicProfile({ params }: Props) {
               opponentId={person.id}
               opponentName={person.username}
               canInvite={ent.isPro}
+              duel={duel ? {
+                id:        duel.id,
+                status:    duel.status,
+                mine:      duel.mine,
+                workTitle: duel.workTitle,
+                endsAt:    duel.endsAt?.toISOString() ?? null,
+              } : null}
             />
           )}
         </div>

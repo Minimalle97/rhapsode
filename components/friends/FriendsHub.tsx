@@ -248,10 +248,19 @@ function Row({
   linked?:  boolean;
   muted?:   boolean;
 }) {
+  // Gron rad = ni star i en tvekamp just nu. Samma grona sprak som
+  // biblioteket anvander for samma sak, sa att det gar att kanna igen
+  // utan att lasa nagot.
+  const dueling = person.duel !== null;
+
   const inner = (
     <div style={{
-      background: "var(--bg2)",
-      border: `1px solid ${rank === 1 ? "rgba(200,164,80,0.32)" : "var(--bord)"}`,
+      background: dueling ? "rgba(106,158,106,0.07)" : "var(--bg2)",
+      border: `1px solid ${
+        dueling ? "rgba(106,158,106,0.45)"
+        : rank === 1 ? "rgba(200,164,80,0.32)"
+        : "var(--bord)"
+      }`,
       borderRadius: "var(--r2)",
       padding: "13px 16px",
       display: "flex", alignItems: "center", gap: "13px",
@@ -290,6 +299,12 @@ function Row({
           {person.medals > 0 && ` · ${person.medals} ${person.medals === 1 ? "medal" : "medals"}`}
           {person.streakDays > 0 && ` · ${person.streakDays}d streak`}
         </p>
+
+        {person.duel && (
+          <p style={{ fontSize: "11px", color: "var(--green)", marginTop: "3px" }}>
+            {person.duel.status === "active" ? "⚔ In a duel with you" : "⚔ Challenge waiting"}
+          </p>
+        )}
       </div>
 
       <div
