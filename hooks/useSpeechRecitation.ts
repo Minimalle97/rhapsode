@@ -36,6 +36,17 @@ interface UseSpeechRecitationOptions {
 
 interface UseSpeechRecitationResult {
   isSupported:       boolean;
+  /**
+   * Platserna i transkriptet dar det blev tyst lange innan ordet kom.
+   *
+   * Raknat i FORSOKETS ordfoljd — index 0 ar det forsta ordet man sade.
+   * lib/cue.ts oversatter sedan till originalets platser vid rattningen.
+   *
+   * Tystnad ar det narmaste vi kommer "det har kom inte av sig sjalvt".
+   * Det ar inte samma sak som ett fel: man kan ha tvekat och anda sagt
+   * ratt ord. Darfor vager det mindre an en miss — se lib/weakSpots.ts.
+   */
+  hesitationIndices: number[];
   /** Motorn är igång just nu. Kan blinka till falskt vid omstart. */
   isListening:       boolean;
   /** Vad anroparen bett om. Det här ska gränssnittet villkoras på. */
@@ -61,6 +72,15 @@ type SpeechRecognitionInstance = any;
  */
 const FATAL = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
 
+/**
+ * Tystnad langre an sa har raknas som en tvekan.
+ *
+ * Tre sekunder ar valt for att ligga klart over en vanlig andhamtning
+ * och klart under den paus som betyder att man tappat texten helt. Ett
+ * lagre varde hade markt varje komma.
+ */
+const HESITATION_MS = 3_000;
+
 export function useSpeechRecitation(
   { lang = "en-US" }: UseSpeechRecitationOptions = {}
 ): UseSpeechRecitationResult {
@@ -68,6 +88,7 @@ export function useSpeechRecitation(
   const [isListening, setIsListening] = useState(false);
   const [isActive, setIsActive]       = useState(false);
   const [transcript, setTranscript]   = useState("");
+  const [hesitations, setHesitations] = useState<number[]>([]);
   const [interim, setInterim]         = useState("");
   const [error, setError]             = useState<string | null>(null);
 
@@ -76,6 +97,11 @@ export function useSpeechRecitation(
   const restartTimer    = useRef<number | null>(null);
   const langRef         = useRef(lang);
   langRef.current = lang;
+
+  // Hur manga ord som redan sagts, och nar det senast kom nagot. Behovs
+  // for att kunna saga VAR i forsoket pausen lag.
+  const wordsSoFar   = useRef(0);
+  const lastResultAt = useRef(0);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -115,6 +141,9 @@ export function useSpeechRecitation(
       setTranscript("");
       setInterim("");
       setError(null);
+      setHesitations([]);
+      wordsSoFar.current   = 0;
+      lastResultAt.current = Date.now();
     }
 
     const recognition: SpeechRecognitionInstance = new SpeechRecognition();
@@ -132,7 +161,22 @@ export function useSpeechRecitation(
         else interimChunk += result[0].transcript;
       }
       if (finalChunk) {
-        setTranscript(prev => `${prev}${prev ? " " : ""}${finalChunk.trim()}`);
+        const text  = finalChunk.trim();
+        const words = text ? text.split(/\s+/).length : 0;
+        const now   = Date.now();
+
+        // Kom det har efter en lang tystnad? Da var det FORSTA ordet i
+        // biten det som inte ville komma, och det ar den platsen som
+        // markeras — inte hela biten.
+        if (lastResultAt.current && now - lastResultAt.current > HESITATION_MS && words > 0) {
+          const at = wordsSoFar.current;
+          setHesitations(prev => (prev.includes(at) ? prev : [...prev, at]));
+        }
+
+        wordsSoFar.current  += words;
+        lastResultAt.current = now;
+
+        setTranscript(prev => `${prev}${prev ? " " : ""}${text}`);
       }
       setInterim(interimChunk);
     };
@@ -180,6 +224,7 @@ export function useSpeechRecitation(
     wantListening.current = true;
     setIsActive(true);
     setError(null);
+    lastResultAt.current = Date.now();
     begin(false);
   }, [begin]);
 
@@ -203,6 +248,9 @@ export function useSpeechRecitation(
     setTranscript("");
     setInterim("");
     setError(null);
+    setHesitations([]);
+    wordsSoFar.current   = 0;
+    lastResultAt.current = Date.now();
   }, []);
 
   // Stoppar allt om komponenten avmonteras medan den lyssnar.
@@ -221,6 +269,7 @@ export function useSpeechRecitation(
   return {
     isSupported, isListening, isActive,
     transcript, interimTranscript: interim,
+    hesitationIndices: hesitations,
     error, start, stop, reset,
   };
 }

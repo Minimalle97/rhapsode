@@ -89,7 +89,12 @@ export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
       const res = await fetch("/api/practice/grade", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ sectionId, attempt: speech.transcript, cueLevel: "hidden" }),
+        body: JSON.stringify({
+          sectionId,
+          attempt:     speech.transcript,
+          cueLevel:    "hidden",
+          hesitatedAt: speech.hesitationIndices,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Grading failed");

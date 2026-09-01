@@ -17,6 +17,16 @@ import { recordRun } from "@/lib/performanceStore";
 import { accuracyPercent } from "@/lib/mastery";
 import { recordWholeWorkAttempt } from "@/lib/weakSpots";
 
+/** Se motsvarande funktion i practice/grade — samma sanering. */
+function hesitatedFrom(body: Record<string, unknown>): number[] {
+  const raw = body.hesitatedAt;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(Number)
+    .filter(n => Number.isInteger(n) && n >= 0 && n < 100_000)
+    .slice(0, 400);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { user } = await session();
@@ -67,7 +77,12 @@ export async function POST(req: NextRequest) {
     // Ett framforande ur minnet ar det strangaste provet appen har, sa
     // det som foll bort dar vager tyngst av allt. Rattningen gjordes mot
     // sektionerna hopfogade i ordning, och delas upp igen pa samma satt.
-    await recordWholeWorkAttempt(sections, graded.diff).catch(err => {
+    await recordWholeWorkAttempt(sections, graded.diff, {
+      // Ett framforande sker alltid utan stod — det ar hela poangen med
+      // laget — sa missarna vager sin grundvikt.
+      cueLevel:    "hidden",
+      hesitatedAt: hesitatedFrom(body),
+    }).catch(err => {
       console.error("Could not record weak spots:", err);
     });
 

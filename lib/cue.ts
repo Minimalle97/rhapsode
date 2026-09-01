@@ -89,6 +89,16 @@ export function suggestCue(status: string): CueLevel {
 export interface Diff {
   word:    string;
   correct: boolean;
+  /**
+   * Vilket ord i FORSOKET som hamnade har, eller null nar originalets ord
+   * inte motsvarades av nagot alls (en ren utelamning).
+   *
+   * Tillagt for tvekan: hooken vet vid vilka ord i forsoket det blev tyst
+   * lange, men de raknas i forsokets ordfoljd. Utan den har bryggan gar
+   * de inte att lagga pa ratt stalle i originalet, och en tvekan hade
+   * hamnat pa fel rad — vilket vore samre an att inte visa den alls.
+   */
+  at?:     number | null;
 }
 
 /**
@@ -137,14 +147,16 @@ export function gradeAttempt(
 
   while (i > 0) {
     if (j > 0 && origWords[i - 1] === tryWords[j - 1] && d[i][j] === d[i - 1][j - 1]) {
-      diff.unshift({ word: origWords[i - 1], correct: true });
+      diff.unshift({ word: origWords[i - 1], correct: true, at: j - 1 });
       i--; j--;
     } else if (j > 0 && d[i][j] === d[i - 1][j - 1] + 1) {
-      diff.unshift({ word: origWords[i - 1], correct: false });
+      // Ett ord sades, men fel ord. Platsen i forsoket ar kand.
+      diff.unshift({ word: origWords[i - 1], correct: false, at: j - 1 });
       missed.push(origWords[i - 1]);
       i--; j--;
     } else if (d[i][j] === d[i - 1][j] + 1) {
-      diff.unshift({ word: origWords[i - 1], correct: false });
+      // Ordet hoppades over helt. Det finns ingen plats i forsoket.
+      diff.unshift({ word: origWords[i - 1], correct: false, at: null });
       missed.push(origWords[i - 1]);
       i--;
     } else {

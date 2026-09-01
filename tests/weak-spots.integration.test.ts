@@ -201,4 +201,112 @@ describe.skipIf(!HAS_DB)("weak spots follow the memory", () => {
 
     expect((await weaknessFor(three.id)).enough).toBe(false);
   });
+
+  // -- Ledtradar och tvekan -------------------------------------------
+
+  it("counts a miss made with the text showing more heavily than one made cold", async () => {
+    // "Frequent hints required": att tappa ett ord med hela texten framfor
+    // sig sager nagot helt annat an att tappa det ur tomma intet.
+    const cold = await prisma.section.create({
+      data: { workId, name: "cold", content: TEXT, orderIndex: 10 },
+      select: { id: true },
+    });
+    const helped = await prisma.section.create({
+      data: { workId, name: "helped", content: TEXT, orderIndex: 11 },
+      select: { id: true },
+    });
+
+    const diff = gradeAttempt(TEXT, `${LINE_A}
+${LINE_C}`).diff;
+    for (let i = 0; i < 3; i++) {
+      await recordAttempt(cold.id,   diff, { cueLevel: "hidden" });
+      await recordAttempt(helped.id, diff, { cueLevel: "full" });
+    }
+
+    const coldSpan   = spansFor(TEXT, await weaknessFor(cold.id))[0];
+    const helpedSpan = spansFor(TEXT, await weaknessFor(helped.id))[0];
+
+    expect(coldSpan).toBeDefined();
+    expect(helpedSpan).toBeDefined();
+    // Samma missar, men den som hade texten framme bedoms strangare.
+    expect(helpedSpan.accuracy).toBeLessThan(coldSpan.accuracy);
+  });
+
+  it("marks a word that is always hesitated over but always correct", async () => {
+    const s = await prisma.section.create({
+      data: { workId, name: "hesitant", content: TEXT, orderIndex: 12 },
+      select: { id: true },
+    });
+
+    // Perfekt atergivning varje gang — men alltid en lang paus fore ordet
+    // pa plats 6 i forsoket.
+    const diff = gradeAttempt(TEXT, TEXT).diff;
+    for (let i = 0; i < 5; i++) {
+      await recordAttempt(s.id, diff, { cueLevel: "hidden", hesitatedAt: [6] });
+    }
+
+    const w = await weaknessFor(s.id);
+    const marked = w.words.find(x => x.index === 6);
+
+    expect(marked).toBeDefined();
+    // Det syns — men det ar inte samma sak som att inte kunna det.
+    expect(marked!.severity).toBe("moderate");
+    expect(marked!.severity).not.toBe("severe");
+  });
+
+  it("leaves the words that were neither missed nor hesitated alone", async () => {
+    const s = await prisma.section.create({
+      data: { workId, name: "quiet", content: TEXT, orderIndex: 13 },
+      select: { id: true },
+    });
+
+    const diff = gradeAttempt(TEXT, TEXT).diff;
+    for (let i = 0; i < 5; i++) {
+      await recordAttempt(s.id, diff, { cueLevel: "hidden", hesitatedAt: [6] });
+    }
+
+    const w = await weaknessFor(s.id);
+    // Bara den ena platsen, inte hela sektionen.
+    expect(w.words.map(x => x.index)).toEqual([6]);
+  });
+
+  it("does not count a word twice when it was both missed and hesitated over", async () => {
+    // Missen ar det starkare tecknet och inkluderar redan att det gick
+    // trogt. Bada pa hade dubbelraknat samma handelse.
+    //
+    // Provas pa ETT ord, inte pa hela sektionen: ett forsok dar ordet
+    // sags FEL ger en substitution, och bara substitutioner har en plats
+    // i forsoket att hanga en tvekan pa. Ett ord som hoppats over helt
+    // har `at: null`, och da kan fragan inte ens uppsta.
+    const wrong = `${LINE_A}
+the muddle line keeps slipping away
+${LINE_C}`;
+    const diff  = gradeAttempt(TEXT, wrong).diff;
+
+    const swapped = diff.findIndex(d => !d.correct && d.at !== null && d.at !== undefined);
+    expect(swapped).toBeGreaterThan(-1);
+    const attemptIndex = diff[swapped].at as number;
+
+    const both = await prisma.section.create({
+      data: { workId, name: "both", content: TEXT, orderIndex: 14 },
+      select: { id: true },
+    });
+    const missOnly = await prisma.section.create({
+      data: { workId, name: "missonly", content: TEXT, orderIndex: 15 },
+      select: { id: true },
+    });
+
+    for (let i = 0; i < 3; i++) {
+      await recordAttempt(both.id,     diff, { cueLevel: "hidden", hesitatedAt: [attemptIndex] });
+      await recordAttempt(missOnly.id, diff, { cueLevel: "hidden" });
+    }
+
+    const a = (await weaknessFor(both.id)).words.find(w => w.index === swapped);
+    const b = (await weaknessFor(missOnly.id)).words.find(w => w.index === swapped);
+
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    // Samma ord, samma vikt — tvekan la ingenting ovanpa missen.
+    expect(a!.rate).toBeCloseTo(b!.rate, 6);
+  });
 });

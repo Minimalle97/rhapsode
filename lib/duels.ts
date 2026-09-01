@@ -555,6 +555,8 @@ export async function recordDuelAttempt(params: {
   durationSecs?:   number;
   hesitations?:    number;
   longestPauseMs?: number;
+  /** Platser i forsoket dar det blev tyst lange innan ordet kom. */
+  hesitatedAt?:    number[];
 }): Promise<DuelAttemptResult> {
   const { duelId, userId, transcript } = params;
 
@@ -589,7 +591,10 @@ export async function recordDuelAttempt(params: {
   // atergivning ur minnet, och var texten foll ar lika sant dar som
   // nagon annanstans. Svagheten ar en hjalp at anvandaren, inte en del
   // av kampens rakning, sa den bryter inte regeln ovan.
-  await recordWholeWorkAttempt(sections, graded.diff).catch(() => {});
+  await recordWholeWorkAttempt(sections, graded.diff, {
+    cueLevel:    "hidden",
+    hesitatedAt: params.hesitatedAt ?? [],
+  }).catch(() => {});
 
   const before = await measureSide(duelId, userId);
 

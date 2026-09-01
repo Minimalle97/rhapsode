@@ -29,6 +29,8 @@ interface PracticePanelProps {
   /** Nästa sektion att öva, om det finns en. Gör repetition till ett tryck. */
   nextSectionId?:   string | null;
   nextSectionName?: string | null;
+  /** Ingangslage. Lasvyn skickar "write" nar man gatt hit fran sina svaga stallen. */
+  initialMode?:     PracticeMode;
 }
 
 const MODES: { value: PracticeMode; label: string }[] = [
@@ -40,11 +42,11 @@ const MODES: { value: PracticeMode; label: string }[] = [
 
 export function PracticePanel({
   workId, workTitle, sectionId, sectionName, content, prevRank, isPro,
-  nextSectionId, nextSectionName,
+  nextSectionId, nextSectionName, initialMode = "read",
 }: PracticePanelProps) {
   const router = useRouter();
   const { submitSession, result, clearResult } = usePracticeSession(prevRank);
-  const [mode, setMode]           = useState<PracticeMode>("read");
+  const [mode, setMode]           = useState<PracticeMode>(initialMode);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted]   = useState(false);
   const [lastDetail, setLastDetail] = useState<GradeDetail | null>(null);

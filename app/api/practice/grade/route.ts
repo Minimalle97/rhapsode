@@ -33,6 +33,22 @@ import { recordAttempt } from "@/lib/weakSpots";
 
 const CUES: CueLevel[] = ["full", "firstWord", "initials", "skeleton", "hidden"];
 
+/**
+ * Platserna i forsoket dar det blev tyst lange, saneras.
+ *
+ * Kommer fran klienten, sa den far inte lita pa formen. Ett tal utanfor
+ * ett rimligt ordantal vore harmlost — det traffar ingen plats — men en
+ * lista pa tiotusen poster vore det inte.
+ */
+function hesitatedFrom(body: Record<string, unknown>): number[] {
+  const raw = body.hesitatedAt;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(Number)
+    .filter(n => Number.isInteger(n) && n >= 0 && n < 10_000)
+    .slice(0, 200);
+}
+
 interface Analysis {
   summary:  string;
   patterns: string[];
@@ -81,7 +97,12 @@ export async function POST(req: NextRequest) {
     // Ett fel far inte falla ovningen: markeringen ar en hjalp, och att
     // ett pass misslyckas for att en hjalp inte gick att spara vore fel
     // ordning pa sakerna.
-    await recordAttempt(section.id, graded.diff).catch(err => {
+    await recordAttempt(section.id, graded.diff, {
+      // Hur mycket stod som var framme. Att tappa ett ord med hela texten
+      // synlig vager tyngre an att tappa det ur tomma intet.
+      cueLevel:    cue,
+      hesitatedAt: hesitatedFrom(body),
+    }).catch(err => {
       console.error("Could not record weak spots:", err);
     });
 

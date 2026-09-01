@@ -14,6 +14,7 @@ import path from "path";
 import { gradeAttempt } from "@/lib/cue";
 import {
   alignedWords, spansFor, severityOf, explain,
+  CUE_WEIGHT, HESITATION_WEIGHT,
   type SectionWeakness, type WeakWord,
 } from "@/lib/weakSpots";
 
@@ -194,8 +195,10 @@ describe("weakness comes from what the user did", () => {
 
   it("decays old attempts so the mark follows the current memory", () => {
     // Utan dampningen markeras en tidig svacka for alltid.
+    // Vikten ar inte langre en etta — ledtradsniva och tvekan gor den
+    // rorlig — men dampningen ar oforandrad, och det ar den som provas.
     expect(src).toMatch(/const DECAY = 0\.\d+/);
-    expect(src).toMatch(/m \* DECAY \+ \(missed \? 1 : 0\)/);
+    expect(src).toMatch(/m \* DECAY \+ weight/);
     expect(src).toMatch(/a \* DECAY \+ 1/);
   });
 
@@ -214,21 +217,23 @@ describe("weakness comes from what the user did", () => {
 describe("the counting happens when practice is recorded, not when reading", () => {
   it("writes from the grading route", () => {
     const src = read("app/api/practice/grade/route.ts");
-    expect(src).toMatch(/recordAttempt\(section\.id, graded\.diff\)/);
+    expect(src).toMatch(/recordAttempt\(section\.id, graded\.diff,/);
   });
 
   it("writes from a whole-work performance", () => {
     expect(read("app/api/performance/route.ts"))
-      .toMatch(/recordWholeWorkAttempt\(sections, graded\.diff\)/);
+      .toMatch(/recordWholeWorkAttempt\(sections, graded\.diff,/);
   });
 
   it("never lets a failed write break the practice session", () => {
     // Markeringen ar en hjalp. Att ett pass misslyckas for att en hjalp
     // inte gick att spara vore fel ordning pa sakerna.
+    // [\s\S] och inte [^)]: argumentet ar numera ett objekt over flera
+    // rader, och ett prov som inte kan spanna dem provar ingenting.
     expect(read("app/api/practice/grade/route.ts"))
-      .toMatch(/recordAttempt\([^)]*\)\.catch\(/);
+      .toMatch(/recordAttempt\([\s\S]*?\)\.catch\(/);
     expect(read("app/api/performance/route.ts"))
-      .toMatch(/recordWholeWorkAttempt\([^)]*\)\.catch\(/);
+      .toMatch(/recordWholeWorkAttempt\([\s\S]*?\)\.catch\(/);
   });
 
   it("reads a finished answer when a section is opened", () => {
@@ -281,5 +286,105 @@ describe("one renderer, not two", () => {
     for (const level of ["moderate", "strong", "severe"]) {
       expect(src).toContain(`${level}:`);
     }
+  });
+});
+
+// ── Ledtradar och tvekan ──────────────────────────────────────────────
+describe("hints and hesitation count too", () => {
+  const src = read("lib/weakSpots.ts");
+
+  it("weighs a miss by how much of the text was showing", () => {
+    // "Frequent hints required" ar ett eget tecken. Att tappa ett ord med
+    // hela texten framfor sig ar nagot annat an att tappa det ur intet.
+    expect(src).toMatch(/const CUE_WEIGHT: Record<CueLevel, number>/);
+  });
+
+  it("makes more support mean a heavier miss", () => {
+    // Provas pa VARDENA, inte pa kallan som stavar dem. Ett prov som
+    // laser siffror ur en textfil gar sonder pa indrag.
+    expect(CUE_WEIGHT.hidden).toBe(1);
+    expect(CUE_WEIGHT.skeleton).toBeGreaterThan(CUE_WEIGHT.hidden);
+    expect(CUE_WEIGHT.initials).toBeGreaterThan(CUE_WEIGHT.skeleton);
+    expect(CUE_WEIGHT.firstWord).toBeGreaterThan(CUE_WEIGHT.initials);
+    expect(CUE_WEIGHT.full).toBeGreaterThan(CUE_WEIGHT.firstWord);
+  });
+
+  it("counts a hesitation for less than a miss", () => {
+    // Att staka sig och anda komma pa det ar inte att inte kunna det.
+    expect(HESITATION_WEIGHT).toBeGreaterThan(0);
+    expect(HESITATION_WEIGHT).toBeLessThan(CUE_WEIGHT.hidden);
+    // Och lagt nog att en ren tvekan aldrig ensam nar hogsta graden.
+    expect(severityOf(HESITATION_WEIGHT)).not.toBe("severe");
+  });
+
+  it("never counts the same word as both missed and hesitated", () => {
+    // Missen ar det starkare tecknet och inkluderar redan att det gick
+    // trogt. Att lagga bada pa hade dubbelraknat samma handelse.
+    expect(src).toMatch(/const paused\s+= !missed &&/);
+  });
+
+  it("places a hesitation through the attempt index, not by position", () => {
+    // Tvekningarna raknas i forsokets ordfoljd. Utan bryggan via diff.at
+    // hamnar de fel sa fort nagon hoppat over ett ord.
+    expect(src).toMatch(/diff\[i\]\.at/);
+  });
+});
+
+describe("the grader hands over which attempt word landed where", () => {
+  it("records the attempt index on a match and on a substitution", () => {
+    const g = gradeAttempt("one two three", "one two three");
+    expect(g.diff.map(d => d.at)).toEqual([0, 1, 2]);
+  });
+
+  it("marks an outright omission as having no attempt word", () => {
+    // Ordet sades aldrig. Det finns ingen plats i forsoket att peka pa,
+    // och da far ingen tvekan hangas dar heller.
+    const g = gradeAttempt("one two three", "one three");
+    const missing = g.diff.find(d => !d.correct);
+    expect(missing).toBeDefined();
+    expect(missing!.at).toBeNull();
+  });
+});
+
+describe("the hesitation signal is sanitised on the server", () => {
+  it("is filtered in every route that accepts it", () => {
+    // Kommer fran klienten. En lista pa tiotusen poster far inte na
+    // rakningen bara for att den ar valformad JSON.
+    for (const file of [
+      "app/api/practice/grade/route.ts",
+      "app/api/performance/route.ts",
+      "app/api/duels/[id]/attempt/route.ts",
+    ]) {
+      const src = read(file);
+      expect(src).toMatch(/Number\.isInteger/);
+      expect(src).toMatch(/\.slice\(0, \d+\)/);
+    }
+  });
+});
+
+// ── Vagen in i ovningen ───────────────────────────────────────────────
+describe("weak spots lead straight into practice", () => {
+  const view = read("components/reading/ReadingView.tsx");
+
+  it("offers the shortcut only when there is something to practise", () => {
+    expect(view).toMatch(/highlight && spans\.length > 0/);
+    expect(view).toMatch(/Practise these/);
+  });
+
+  it("lands in a testing mode, not with the text open", () => {
+    // Att svara pa "ova det har" med att visa facit vore ingen ovning.
+    expect(view).toMatch(/\/practice\/\$\{workId\}\/\$\{section\.id\}\?mode=write/);
+  });
+
+  it("has practice honour the mode it is sent", () => {
+    const page = read("app/(app)/practice/[id]/[sectionId]/page.tsx");
+    expect(page).toMatch(/initialMode=/);
+    // Och bara kanda lagen — ?mode= kommer fran adressfaltet.
+    expect(page).toMatch(/MODES\.includes/);
+  });
+
+  it("still lets anyone practise a section without weak spots", () => {
+    // Genvagen far inte ersatta den vanliga vagen in.
+    expect(view).toMatch(/Practise this section/);
   });
 });

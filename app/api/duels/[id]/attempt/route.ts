@@ -37,6 +37,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       durationSecs:   body.durationSecs,
       hesitations:    body.hesitations,
       longestPauseMs: body.longestPauseMs,
+      hesitatedAt:    Array.isArray(body.hesitatedAt)
+        ? body.hesitatedAt
+            .map(Number)
+            .filter((n: number) => Number.isInteger(n) && n >= 0 && n < 100_000)
+            .slice(0, 400)
+        : [],
     });
 
     return NextResponse.json(result);

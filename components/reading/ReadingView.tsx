@@ -48,6 +48,12 @@ interface Props {
 
 const SEEN_KEY = "rhapsode.weakspots.explained";
 
+const WORST_LABEL: Record<"moderate" | "strong" | "severe", string> = {
+  moderate: "needs a look",
+  strong:   "needs practice",
+  severe:   "keeps slipping",
+};
+
 export function ReadingView({
   workId, workTitle, author, section, position, total,
   prevId, nextId, firstId, isPro, spans, hasHistory,
@@ -103,6 +109,13 @@ export function ReadingView({
 
   const showing = highlight ? spans : [];
 
+  // Varsta graden i sektionen, for en rad text vid genvagen till ovningen.
+  const worst =
+    spans.some(sp => sp.severity === "severe")   ? "severe" as const
+    : spans.some(sp => sp.severity === "strong") ? "strong" as const
+    : spans.length > 0                           ? "moderate" as const
+    : null;
+
   return (
     <div style={{ maxWidth: "760px", margin: "0 auto", padding: "32px 24px 90px" }}>
       <Link href={`/work/${workId}`} style={backLink}>← {workTitle}</Link>
@@ -148,6 +161,40 @@ export function ReadingView({
           Your weak spots are highlighted in orange, based on where the text has
           actually slipped in your own practice. They fade as it starts to hold.
         </p>
+      )}
+
+      {/*
+        Vagen fran "har tappar jag det" till att gora nagot at det.
+        Lander i Write och inte i Read: att svara pa "ova det har" med att
+        visa texten vore att racka over facit.
+      */}
+      {highlight && spans.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+          marginTop: "10px", padding: "10px 14px",
+          background: "rgba(214,140,58,0.08)",
+          border: "1px solid rgba(214,140,58,0.28)",
+          borderRadius: "var(--r3)",
+        }}>
+          <span style={{ fontSize: "12.5px", color: "var(--parch2)", flex: "1 1 auto" }}>
+            {spans.length === 1
+              ? "One weak spot in this section"
+              : `${spans.length} weak spots in this section`}
+            {worst && ` · worst: ${WORST_LABEL[worst]}`}
+          </span>
+          <Link
+            href={`/practice/${workId}/${section.id}?mode=write`}
+            style={{
+              padding: "7px 14px", borderRadius: "var(--r3)",
+              background: "transparent",
+              border: "1px solid rgba(214,140,58,0.5)",
+              color: "#D68C3A", fontSize: "12.5px",
+              textDecoration: "none", whiteSpace: "nowrap",
+            }}
+          >
+            Practise these →
+          </Link>
+        </div>
       )}
 
       {/* ── Texten ── */}

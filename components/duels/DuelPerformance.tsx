@@ -170,6 +170,9 @@ export function DuelPerformance({
           durationSecs:   Math.round((Date.now() - startedAt.current) / 1000),
           hesitations:    hesitations.current,
           longestPauseMs: longestGap.current,
+          // Var i forsoket det blev tyst. Hooken raknar platserna; utan
+          // dem gar en tvekan inte att lagga pa ratt rad.
+          hesitatedAt:    speech.hesitationIndices,
         }),
       });
       const data = await res.json();

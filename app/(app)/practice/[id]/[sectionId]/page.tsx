@@ -18,9 +18,21 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { PracticePanel } from "@/components/practice/PracticePanel";
 import type { Metadata } from "next";
+import type { PracticeMode } from "@/types";
+
+/** Lagen som gar att peka pa utifran. Allt annat faller till "read". */
+const MODES: PracticeMode[] = ["read", "hide", "write", "recite"];
 
 interface Props {
-  params: Promise<{ id: string; sectionId: string }>;
+  params:       Promise<{ id: string; sectionId: string }>;
+  /**
+   * `?mode=` valjer ingangslage.
+   *
+   * Finns for att lasvyn ska kunna skicka nagon RAKT in i ett prov nar de
+   * tryckt pa sina svaga stallen. Att da landa i "Read" — texten
+   * uppslagen — vore att svara pa "ova det har" med att visa facit.
+   */
+  searchParams?: Promise<{ mode?: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -35,8 +47,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function PracticePage({ params }: Props) {
+export default async function PracticePage({ params, searchParams }: Props) {
   const { id, sectionId } = await params;
+  const sp = (await searchParams) ?? {};
   if (!id || !sectionId) notFound();
 
 // Prisma tolkar `undefined` i ett where-villkor som "inget villkor". Ett id
@@ -100,6 +113,9 @@ export default async function PracticePage({ params }: Props) {
       isPro={ent.isPro}
       nextSectionId={next?.id ?? null}
       nextSectionName={next?.name ?? null}
+      initialMode={
+        MODES.includes(sp.mode as PracticeMode) ? (sp.mode as PracticeMode) : "read"
+      }
     />
   );
 }

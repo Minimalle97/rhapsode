@@ -37,7 +37,7 @@
 // mot alla dess rader. Ingen modell ar inblandad i nagondera.
 
 import { prisma } from "./db";
-import type { Diff } from "./cue";
+import type { Diff, CueLevel } from "./cue";
 
 /**
  * Hur snabbt det gamla viker undan.
@@ -58,6 +58,39 @@ const DECAY = 0.82;
  * bara att man just borjat.
  */
 const MIN_ATTEMPTS = 2.2;
+
+/**
+ * Hur tungt en miss vager, efter hur mycket stod som var framme.
+ *
+ * "Frequent hints required" ar ett eget tecken pa svaghet. Att tappa ett
+ * ord med hela texten framfor sig sager nagot helt annat an att tappa det
+ * ur tomma intet — det forsta ar ett stalle man inte ens kan LASA sig
+ * igenom, det andra ar bara svart. Ju mer stod som fanns, desto tyngre
+ * vager missen.
+ *
+ * `hidden` ar grunden. Ingenting vager mindre an att missa nar ingenting
+ * visades, for det ar det normala tillstandet i en minnesovning.
+ */
+export const CUE_WEIGHT: Record<CueLevel, number> = {
+  full:      1.40,
+  firstWord: 1.25,
+  initials:  1.15,
+  skeleton:  1.05,
+  hidden:    1.00,
+};
+
+/**
+ * Vad en tvekan vager, nar ordet anda blev ratt.
+ *
+ * Mindre an en miss, och med flit. Att staka sig och sedan komma pa det
+ * ar inte samma sak som att inte kunna det — men det ar heller inte
+ * ingenting, och det ar ofta forsta tecknet pa att en rad borjar glida.
+ *
+ * Vardet ar valt sa att ett ord man konsekvent tvekar pa men alltid far
+ * ratt hamnar pa "moderate" och aldrig hogre. Bara riktiga missar tar
+ * ett stalle hela vagen till "severe".
+ */
+export const HESITATION_WEIGHT = 0.35;
 
 export type Severity = "moderate" | "strong" | "severe";
 
@@ -164,7 +197,24 @@ function readMap(raw: unknown): WordMap {
  * ovning misslyckas for att en hjalp inte gick att spara vore fel ordning
  * pa sakerna. Anroparen fangar darfor felet och gar vidare.
  */
-export async function recordAttempt(sectionId: string, diff: Diff[]): Promise<void> {
+export interface AttemptContext {
+  /** Hur mycket av texten som var framme. Tyngre miss ju mer stod. */
+  cueLevel?: CueLevel;
+  /**
+   * Platser i FORSOKET dar det blev tyst lange innan ordet kom.
+   *
+   * Raknat i forsokets ordfoljd, precis som hooken ger dem. `diff[i].at`
+   * ar bryggan over till originalets platser — utan den hade en tvekan
+   * hamnat pa fel rad sa fort nagon hoppat over ett ord.
+   */
+  hesitatedAt?: number[];
+}
+
+export async function recordAttempt(
+  sectionId: string,
+  diff:      Diff[],
+  ctx:       AttemptContext = {}
+): Promise<void> {
   if (diff.length === 0) return;
 
   const existing = await prisma.sectionWeakness.findUnique({
@@ -176,15 +226,26 @@ export async function recordAttempt(sectionId: string, diff: Diff[]): Promise<vo
   const now  = Date.now();
   const next: WordMap = {};
 
+  const cueWeight = CUE_WEIGHT[ctx.cueLevel ?? "hidden"] ?? 1;
+  const hesitated = new Set(ctx.hesitatedAt ?? []);
+
   for (let i = 0; i < diff.length; i++) {
-    const key    = String(i);
+    const key       = String(i);
     const [m, a, l] = prev[key] ?? [0, 0, 0];
-    const missed = !diff[i].correct;
+    const missed    = !diff[i].correct;
+
+    // En miss vager efter hur mycket stod som fanns. Blev ordet ratt men
+    // kom det efter en lang tystnad vager tvekan i stallet — mindre, men
+    // inte noll. Ett ord kan inte bade missas och tvekas: missen ar det
+    // starkare tecknet och inkluderar redan att det gick trogt.
+    const at        = diff[i].at;
+    const paused    = !missed && at !== null && at !== undefined && hesitated.has(at);
+    const weight    = missed ? cueWeight : paused ? HESITATION_WEIGHT : 0;
 
     next[key] = [
-      m * DECAY + (missed ? 1 : 0),
+      m * DECAY + weight,
       a * DECAY + 1,
-      missed ? now : l,
+      weight > 0 ? now : l,
     ];
   }
 
@@ -218,7 +279,8 @@ export async function recordAttempt(sectionId: string, diff: Diff[]): Promise<vo
  */
 export async function recordWholeWorkAttempt(
   sections: { id: string; content: string }[],
-  diff:     Diff[]
+  diff:     Diff[],
+  ctx:      AttemptContext = {}
 ): Promise<void> {
   let offset = 0;
 
@@ -233,7 +295,10 @@ export async function recordWholeWorkAttempt(
     // an att skriva svaghet pa fel plats.
     if (slice.length !== count) return;
 
-    await recordAttempt(section.id, slice).catch(() => {});
+    // Tvekningarna raknas i HELA forsokets ordfoljd, och `slice` bar sina
+    // egna `at` som fortfarande pekar dit. De behover darfor inte rebasas
+    // — de jamfors mot samma lista hela vagen.
+    await recordAttempt(section.id, slice, ctx).catch(() => {});
   }
 }
 
