@@ -72,7 +72,6 @@ export function PerformanceMode({
   const speech = useSpeechRecitation({ lang });
 
   const [result, setResult]   = useState<RunResult | null>(null);
-  const [sending, setSending] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
   const startedAt   = useRef<number>(0);
@@ -100,12 +99,6 @@ export function PerformanceMode({
     if (speech.isActive) noteSpeech();
   }, [speech.transcript, speech.interimTranscript, speech.isActive, noteSpeech]);
 
-  // Motorn kan ge upp av sig sjalv — nekad mikrofon, ingen enhet. Da ska
-  // det man redan sagt tas till vara i stallet for att forsvinna: vyn gar
-  // till granskningen, dar felet syns och texten gar att skicka anda.
-  useEffect(() => {
-    if (phase === "performing" && !speech.isActive) setPhase("review");
-  }, [phase, speech.isActive]);
 
   /**
    * Allt som ratas ut styrs av `phase`, aldrig av `speech.isActive`.
@@ -124,6 +117,23 @@ export function PerformanceMode({
    * skickas — samma tvastegsform som ReciteMode redan hade, och skalet
    * till att det laget alltid kants stadigare an det har.
    */
+  /**
+   * Laget som faktiskt ritas.
+   *
+   * Ger motorn upp av sig sjalv — nekad mikrofon, ingen enhet — ska det
+   * man redan sagt tas till vara i stallet for att forsvinna. Det raknas
+   * FRAM har i stallet for att synkas i en effekt: en effekt som satter
+   * state pa nasta rad ar en extra rendering per tangenttryckning, och
+   * React sager ifran om den med ratta.
+   *
+   * Under en omstart mitt i en paus star `isActive` kvar sant — det ar
+   * hela poangen med hookens skillnad mellan "vill lyssna" och "lyssnar
+   * just nu" — sa den har raden loser bara ut nar motorn verkligen gett
+   * upp.
+   */
+  const shown: Phase =
+    phase === "performing" && !speech.isActive ? "review" : phase;
+
   function begin() {
     setResult(null);
     setError(null);
@@ -164,8 +174,6 @@ export function PerformanceMode({
       setPhase("review");
       return;
     }
-
-    setSending(true);
     setError(null);
     setPhase("marking");
     try {
@@ -193,8 +201,6 @@ export function PerformanceMode({
       // Tillbaka till granskningen, inte till borjan: det man sagt finns
       // kvar och gar att skicka igen.
       setPhase("review");
-    } finally {
-      setSending(false);
     }
   }
 
@@ -207,7 +213,7 @@ export function PerformanceMode({
   }
 
   // ── Efterat ─────────────────────────────────────────────────────
-  if (phase === "done" && result) {
+  if (shown === "done" && result) {
     const s = result.standing;
     return (
       <div>
@@ -286,7 +292,7 @@ export function PerformanceMode({
   }
 
   // ── Under tiden ─────────────────────────────────────────────────
-  if (phase === "performing") {
+  if (shown === "performing") {
     return (
       <div>
         <p style={eyebrow}>
@@ -299,24 +305,43 @@ export function PerformanceMode({
           {partName ?? workTitle}
         </p>
 
-        {/* Ordrakningen ar allt som visas. Texten far inte synas — den som
-            behover en ledtrad ar inte i ett framforande. */}
-        <div style={liveBox}>
-          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--gold)", lineHeight: 1 }}>
-            {speech.transcript.trim() ? speech.transcript.trim().split(/\s+/).length : 0}
-          </p>
-          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            words spoken
-          </p>
+        {/*
+          Det som horts, inte hur mycket.
 
-          {/* De sista orden, sa att man ser ATT det gar fram. Hela texten
-              visas inte — det vore en ledtrad mitt i ett framforande. */}
-          {(speech.transcript || speech.interimTranscript) && (
-            <p style={tailStyle}>
-              …{speech.transcript.trim().split(/\s+/).slice(-8).join(" ")}
-              <span style={{ color: "var(--muted)" }}> {speech.interimTranscript}</span>
-            </p>
-          )}
+          Rutan visade tidigare ordantalet i fyrtio punkter med de sista
+          orden nedtryckta i en fotnot. Siffran var det enda som gick att
+          se pa avstand, och den ar ocksa det minst intressanta som finns
+          att veta mitt i ett framforande — den drog blicken till en
+          rakning i stallet for till om mikrofonen faktiskt uppfattat
+          orden ratt. Nu star transkriptet frammast och siffran vid sidan.
+
+          Det ar ingen ledtrad: har star vad DU nyss sade, aldrig vad
+          texten sager.
+        */}
+        <div style={liveBox}>
+          <div style={liveHead}>
+            <span style={{ fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
+              Heard
+            </span>
+            <span style={{ fontSize: "12px", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              {wordCount(spoken())} words
+            </span>
+          </div>
+
+          <div style={liveText}>
+            {speech.transcript || speech.interimTranscript ? (
+              <>
+                {speech.transcript}
+                {speech.interimTranscript && (
+                  <span style={{ color: "var(--muted)" }}>
+                    {speech.transcript ? " " : ""}{speech.interimTranscript}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: "var(--bg4)" }}>Listening…</span>
+            )}
+          </div>
         </div>
 
         {speech.error && (
@@ -335,10 +360,10 @@ export function PerformanceMode({
   // Laget som saknades. Utan det foll man tillbaka till Begin i samma
   // ogonblick som motorn stangdes av, och det man just sagt sag ut att
   // vara borta.
-  if (phase === "review" || phase === "marking") {
+  if (shown === "review" || shown === "marking") {
     const said  = spoken();
     const words = said ? said.split(/\s+/).length : 0;
-    const busy  = phase === "marking";
+    const busy  = shown === "marking";
 
     return (
       <div>
@@ -353,17 +378,17 @@ export function PerformanceMode({
         </p>
 
         <div style={liveBox}>
-          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--gold)", lineHeight: 1 }}>
-            {words}
-          </p>
-          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            words captured
-          </p>
-          {said && (
-            <p style={tailStyle}>
-              …{said.split(/\s+/).slice(-14).join(" ")}
-            </p>
-          )}
+          <div style={liveHead}>
+            <span style={{ fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
+              Recorded
+            </span>
+            <span style={{ fontSize: "12px", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              {words} words
+            </span>
+          </div>
+          <div style={liveText}>
+            {said || <span style={{ color: "var(--bg4)" }}>Nothing was picked up.</span>}
+          </div>
         </div>
 
         {error && (
@@ -448,7 +473,38 @@ export function PerformanceMode({
   );
 }
 
+
+/** Ord i en strang. Tom strang ar noll, inte ett. */
+function wordCount(text: string): number {
+  const t = text.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+
 // ── Stilar ────────────────────────────────────────────────────────────
+const liveHead: CSSProperties = {
+  display: "flex", alignItems: "baseline", justifyContent: "space-between",
+  gap: "10px", marginBottom: "10px",
+  paddingBottom: "8px", borderBottom: "1px solid var(--bord)",
+};
+
+/**
+ * Transkriptet.
+ *
+ * Rullar i stallet for att vaxa: ett langt framforande far inte trycka
+ * ned Finish-knappen under skarmkanten mitt i en korning.
+ */
+const liveText: CSSProperties = {
+  fontFamily:  "var(--fb)",
+  fontSize:    "14px",
+  lineHeight:  1.75,
+  color:       "var(--parch2)",
+  textAlign:   "left",
+  maxHeight:   "42vh",
+  overflowY:   "auto",
+  wordBreak:   "break-word",
+  whiteSpace:  "pre-wrap",
+};
+
 const eyebrow: CSSProperties = {
   fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase",
   color: "var(--red)", marginBottom: "10px",
@@ -457,14 +513,6 @@ const notice: CSSProperties = {
   padding: "24px", textAlign: "center", fontSize: "13px", lineHeight: 1.6,
   color: "var(--muted)", background: "var(--bg3)",
   borderRadius: "var(--r2)", border: "1px solid var(--bord)",
-};
-const tailStyle: CSSProperties = {
-  marginTop:  "16px",
-  fontSize:   "13px",
-  lineHeight: 1.6,
-  color:      "var(--parch2)",
-  fontFamily: "var(--fb)",
-  wordBreak:  "break-word",
 };
 
 const liveBox: CSSProperties = {

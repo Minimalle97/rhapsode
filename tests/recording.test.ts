@@ -42,9 +42,12 @@ describe.each(VOICE)("%s mode: what decides the screen", (_name, file) => {
   });
 
   it("draws from an explicit phase instead", () => {
+    // Vilket NAMN variabeln har spelar ingen roll — `shown` ar `phase`
+    // med motorns haveri inraknat, uträknat i stallet for synkat i en
+    // effekt. Det som provas ar att ett uttalat lage styr vyn.
     expect(src).toMatch(/type Phase =/);
-    expect(src).toMatch(/phase === "performing"/);
-    expect(src).toMatch(/phase === "review"/);
+    expect(src).toMatch(/(phase|shown) === "performing"/);
+    expect(src).toMatch(/(phase|shown) === "review"/);
   });
 
   it("separates stopping from sending", () => {
@@ -65,8 +68,20 @@ describe.each(VOICE)("%s mode: what decides the screen", (_name, file) => {
     expect(src).toMatch(/catch \(err\)[\s\S]{0,220}setPhase\("review"\)/);
   });
 
-  it("shows that the recording was captured before anything is sent", () => {
-    expect(src).toMatch(/words captured/);
+  it("shows what was heard before anything is sent", () => {
+    // Ordantalet ar inte langre rubriken — det som horts ar det. Provet
+    // haller pa egenskapen och inte pa den gamla etiketten: rutan ska
+    // visa TEXTEN, och rakningen ska sta vid sidan av den.
+    expect(src).toMatch(/Recorded/);
+    expect(src).toMatch(/\{words\} words/);
+    expect(src).toMatch(/liveText/);
+  });
+
+  it("keeps the word count small rather than making it the headline", () => {
+    // Den stora siffran drog blicken till en rakning i stallet for till
+    // om mikrofonen uppfattat orden ratt.
+    expect(src).not.toMatch(/fontSize: "40px"/);
+    expect(src).toMatch(/Heard/);
   });
 
   it("counts the trailing words the engine had not finalised", () => {

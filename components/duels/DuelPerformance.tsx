@@ -81,7 +81,6 @@ export function DuelPerformance({
   const [mine, setMine]     = useState(initialMine);
   const [theirs, setTheirs] = useState(initialTheirs);
   const [result, setResult] = useState<AttemptResult | null>(null);
-  const [sending, setSending] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
   const { label: timeLeft, done } = useCountdown(endsAt);
@@ -111,11 +110,23 @@ export function DuelPerformance({
     if (done && speech.isActive) speech.stop();
   }, [done, speech]);
 
-  // Ger motorn upp av sig sjalv — nekad mikrofon, ingen enhet — ska det
-  // man redan sagt tas till vara i stallet for att forsvinna.
-  useEffect(() => {
-    if (phase === "performing" && !speech.isActive) setPhase("review");
-  }, [phase, speech.isActive]);
+
+  /**
+   * Laget som faktiskt ritas.
+   *
+   * Ger motorn upp av sig sjalv — nekad mikrofon, ingen enhet — ska det
+   * man redan sagt tas till vara i stallet for att forsvinna. Det raknas
+   * FRAM har i stallet for att synkas i en effekt: en effekt som satter
+   * state pa nasta rad ar en extra rendering per tangenttryckning, och
+   * React sager ifran om den med ratta.
+   *
+   * Under en omstart mitt i en paus star `isActive` kvar sant — det ar
+   * hela poangen med hookens skillnad mellan "vill lyssna" och "lyssnar
+   * just nu" — sa den har raden loser bara ut nar motorn verkligen gett
+   * upp.
+   */
+  const shown: Phase =
+    phase === "performing" && !speech.isActive ? "review" : phase;
 
   function begin() {
     setResult(null);
@@ -157,8 +168,6 @@ export function DuelPerformance({
       setPhase("review");
       return;
     }
-
-    setSending(true);
     setError(null);
     setPhase("marking");
     try {
@@ -188,8 +197,6 @@ export function DuelPerformance({
       setError(err instanceof Error ? err.message : "Could not mark that");
       // Tillbaka till granskningen, inte till borjan: forsoket finns kvar.
       setPhase("review");
-    } finally {
-      setSending(false);
     }
   }
 
@@ -211,7 +218,7 @@ export function DuelPerformance({
   }
 
   // ── Efterat ─────────────────────────────────────────────────────
-  if (phase === "scored" && result) {
+  if (shown === "scored" && result) {
     return (
       <div>
         <p style={{ ...eyebrow, color: result.isBest ? "var(--green)" : "var(--muted)" }}>
@@ -247,7 +254,7 @@ export function DuelPerformance({
   }
 
   // ── Under tiden ─────────────────────────────────────────────────
-  if (phase === "performing") {
+  if (shown === "performing") {
     return (
       <div>
         <p style={eyebrow}>
@@ -260,22 +267,32 @@ export function DuelPerformance({
           {workTitle}
         </p>
 
-        {/* Ordrakningen ar allt som visas. Texten far inte synas — den som
-            behover en ledtrad ar inte i ett framforande. */}
+        {/* Samma andring som i PerformanceMode: det som horts frammast,
+            rakningen vid sidan. Se kommentaren dar. */}
         <div style={liveBox}>
-          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--green)", lineHeight: 1 }}>
-            {speech.transcript.trim() ? speech.transcript.trim().split(/\s+/).length : 0}
-          </p>
-          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            words spoken
-          </p>
+          <div style={liveHead}>
+            <span style={{ fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
+              Heard
+            </span>
+            <span style={{ fontSize: "12px", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              {wordCount(spoken())} words
+            </span>
+          </div>
 
-          {(speech.transcript || speech.interimTranscript) && (
-            <p style={tailStyle}>
-              …{speech.transcript.trim().split(/\s+/).slice(-8).join(" ")}
-              <span style={{ color: "var(--muted)" }}> {speech.interimTranscript}</span>
-            </p>
-          )}
+          <div style={liveText}>
+            {speech.transcript || speech.interimTranscript ? (
+              <>
+                {speech.transcript}
+                {speech.interimTranscript && (
+                  <span style={{ color: "var(--muted)" }}>
+                    {speech.transcript ? " " : ""}{speech.interimTranscript}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: "var(--bg4)" }}>Listening…</span>
+            )}
+          </div>
         </div>
 
         {speech.error && (
@@ -290,10 +307,10 @@ export function DuelPerformance({
   }
 
   // ── Efter stoppet, innan man skickar ────────────────────────────
-  if (phase === "review" || phase === "marking") {
+  if (shown === "review" || shown === "marking") {
     const said  = spoken();
     const words = said ? said.split(/\s+/).length : 0;
-    const busy  = phase === "marking";
+    const busy  = shown === "marking";
 
     return (
       <div>
@@ -308,17 +325,17 @@ export function DuelPerformance({
         </p>
 
         <div style={liveBox}>
-          <p style={{ fontFamily: "var(--fd)", fontSize: "40px", color: "var(--green)", lineHeight: 1 }}>
-            {words}
-          </p>
-          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            words captured
-          </p>
-          {said && (
-            <p style={tailStyle}>
-              …{said.split(/\s+/).slice(-14).join(" ")}
-            </p>
-          )}
+          <div style={liveHead}>
+            <span style={{ fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
+              Recorded
+            </span>
+            <span style={{ fontSize: "12px", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              {words} words
+            </span>
+          </div>
+          <div style={liveText}>
+            {said || <span style={{ color: "var(--bg4)" }}>Nothing was picked up.</span>}
+          </div>
         </div>
 
         {error && (
@@ -477,7 +494,38 @@ function Side({
   );
 }
 
+
+/** Ord i en strang. Tom strang ar noll, inte ett. */
+function wordCount(text: string): number {
+  const t = text.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+
 // ── Stilar ────────────────────────────────────────────────────────────
+const liveHead: CSSProperties = {
+  display: "flex", alignItems: "baseline", justifyContent: "space-between",
+  gap: "10px", marginBottom: "10px",
+  paddingBottom: "8px", borderBottom: "1px solid var(--bord)",
+};
+
+/**
+ * Transkriptet.
+ *
+ * Rullar i stallet for att vaxa: ett langt framforande far inte trycka
+ * ned Finish-knappen under skarmkanten mitt i en korning.
+ */
+const liveText: CSSProperties = {
+  fontFamily:  "var(--fb)",
+  fontSize:    "14px",
+  lineHeight:  1.75,
+  color:       "var(--parch2)",
+  textAlign:   "left",
+  maxHeight:   "42vh",
+  overflowY:   "auto",
+  wordBreak:   "break-word",
+  whiteSpace:  "pre-wrap",
+};
+
 const eyebrow: CSSProperties = {
   fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase",
   color: "var(--green)", marginBottom: "10px",
@@ -490,11 +538,7 @@ const notice: CSSProperties = {
 const liveBox: CSSProperties = {
   background: "var(--bg2)", border: "1px solid rgba(106,158,106,0.3)",
   borderRadius: "var(--r)", padding: "24px", marginBottom: "20px",
-  textAlign: "center",
-};
-const tailStyle: CSSProperties = {
-  marginTop: "16px", fontSize: "13px", lineHeight: 1.6,
-  color: "var(--parch2)", fontFamily: "var(--fb)", wordBreak: "break-word",
+  textAlign: "left",
 };
 const primaryBtn: CSSProperties = {
   padding: "12px 26px", borderRadius: "var(--r3)",
