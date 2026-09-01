@@ -192,8 +192,10 @@ button, input, select, textarea {
     font-size: 0;
     overflow: hidden;
   }
-  .nav-dot-invite   { right: calc(50% - 26px); }
-  .nav-dot-accepted { right: calc(50% - 38px); }
+  /* Ankrade i flikens eget horn i stallet for pa ett matt fran mitten —
+     med sex flikar ar den mitten inte dar den var. */
+  .nav-dot-invite   { right: 6px; }
+  .nav-dot-accepted { right: 18px; }
 }
 
 /* ── Rank-remsa på mobil ───────────────────────────────────────── */
@@ -273,9 +275,20 @@ button, input, select, textarea {
     text-align: center;
     /* Hog nog att traffa med tummen. Under ungefar 44px blir en flik
        nagot man siktar pa i stallet for nagot man trycker pa. */
-    padding: 15px 2px;
-    font-size: 11px;
-    letter-spacing: 0.03em;
+    padding: 15px 1px;
+    /*
+      Sex flikar, inte fem. Pa en 375 px skarm blir det 62 px var, och
+      "Repertoire" ar det langsta ordet i raden — vid 11px svamlade det
+      over och bröts mitt i. Tio pixlar utan teckenmellanrum haller det
+      pa en rad hela vagen ned till de smalaste telefonerna.
+
+      Hojden ar orord: det ar den som avgor om en flik gar att traffa.
+    */
+    font-size: 10px;
+    letter-spacing: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /*

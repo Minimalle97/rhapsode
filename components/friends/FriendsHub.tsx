@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import type { FriendCard } from "@/lib/friends";
 import { PostFeed, type FeedPost } from "./PostFeed";
 import { DuelInbox } from "@/components/duels/DuelInbox";
+import { Avatar as SharedAvatar } from "@/components/profile/Avatar";
 
 interface Data {
   friends:  FriendCard[];
@@ -311,22 +312,15 @@ function Row({
 }
 
 function Avatar({ person }: { person: FriendCard }) {
+  // Delad komponent i stallet for en egen kopia — barden ska ritas
+  // likadant har som pa profilsidan, och den ska inte kunna glomma sig.
   return (
-    <div style={{
-      width: "38px", height: "38px", borderRadius: "50%",
-      background: "var(--bg3)", border: "1px solid var(--bord)",
-      overflow: "hidden", flexShrink: 0,
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
-      {person.avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={person.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      ) : (
-        <span style={{ fontFamily: "var(--fd)", fontSize: "16px", color: "var(--gold)" }}>
-          {person.username[0]?.toUpperCase() ?? "?"}
-        </span>
-      )}
-    </div>
+    <SharedAvatar
+      username={person.username}
+      avatarUrl={person.avatarUrl}
+      border={person.border}
+      size={38}
+    />
   );
 }
 

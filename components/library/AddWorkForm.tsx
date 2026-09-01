@@ -3,7 +3,7 @@
 // Två vägar in: ladda upp en fil eller klistra in text.
 
 import { useState, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Mode = "upload" | "paste";
 
@@ -38,13 +38,24 @@ const ACCEPTED = ".pdf,.txt,.md,text/plain,text/markdown,application/pdf";
 
 export function AddWorkForm() {
   const router   = useRouter();
+  const params   = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [mode, setMode]         = useState<Mode>("upload");
+  // Kommer man fran repertoaren ar titel och upphovsperson redan kanda,
+  // och loptnumret foljer med. Numret ar det som gor kopplingen till
+  // listan EXAKT i stallet for gissad pa namnet — se lib/repertoire.ts.
+  //
+  // Fälten gar anda att andra. Listan kan ha en annan titelform an den
+  // utgava man faktiskt har framfor sig, och det ar anvandarens text som
+  // galler.
+  const fromList  = params.get("canonical");
+  const canonical = fromList && /^\d+$/.test(fromList) ? Number(fromList) : null;
+
+  const [mode, setMode]         = useState<Mode>(canonical ? "paste" : "upload");
   const [file, setFile]         = useState<File | null>(null);
   const [text, setText]         = useState("");
-  const [title, setTitle]       = useState("");
-  const [author, setAuthor]     = useState("");
+  const [title, setTitle]       = useState(params.get("title")  ?? "");
+  const [author, setAuthor]     = useState(params.get("author") ?? "");
   const [words, setWords]       = useState(60);
 
   const [dragging, setDragging] = useState(false);
@@ -96,6 +107,7 @@ export function AddWorkForm() {
         if (title)  fd.append("title", title);
         if (author) fd.append("author", author);
         fd.append("targetWords", String(words));
+        if (canonical !== null) fd.append("canonicalId", String(canonical));
 
         res = await fetch("/api/import-text", { method: "POST", body: fd });
       } else {
@@ -105,7 +117,7 @@ export function AddWorkForm() {
         res = await fetch("/api/import-text", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ text, title, author, targetWords: words }),
+          body:    JSON.stringify({ text, title, author, targetWords: words, canonicalId: canonical }),
         });
       }
 

@@ -4,6 +4,7 @@
 // att varje uppslag måste göras åt båda hållen.
 
 import { prisma } from "./db";
+import { wornBorders } from "./repertoire";
 
 export type FriendState =
   | "none"
@@ -25,6 +26,8 @@ export interface FriendCard {
   /** Id på själva vänskapsraden — behövs för att svara eller ta bort. */
   friendshipId: string;
   since:        Date | null;
+  /** Gruppbarden de bar, eller null. Avgjort pa servern. */
+  border:       string | null;
 }
 
 /** Relationen mellan två användare, sedd från den förstas håll. */
@@ -83,9 +86,13 @@ export async function listFriends(userId: string): Promise<FriendCard[]> {
     },
   });
 
+  const others  = rows.map(r => (r.requesterId === userId ? r.addressee : r.requester));
+  // En fraga for alla bardar, inte en per rad.
+  const borders = await wornBorders(others.map(o => o.id));
+
   return rows.map(r => {
     const other = r.requesterId === userId ? r.addressee : r.requester;
-    return toCard(other, r.id, r.respondedAt);
+    return toCard(other, r.id, r.respondedAt, borders.get(other.id) ?? null);
   });
 }
 
@@ -100,7 +107,8 @@ export async function incomingRequests(userId: string): Promise<FriendCard[]> {
     },
   });
 
-  return rows.map(r => toCard(r.requester, r.id, null));
+  const borders = await wornBorders(rows.map(r => r.requester.id));
+  return rows.map(r => toCard(r.requester, r.id, null, borders.get(r.requester.id) ?? null));
 }
 
 /** Egna förfrågningar som ännu inte besvarats. */
@@ -114,7 +122,8 @@ export async function outgoingRequests(userId: string): Promise<FriendCard[]> {
     },
   });
 
-  return rows.map(r => toCard(r.addressee, r.id, null));
+  const borders = await wornBorders(rows.map(r => r.addressee.id));
+  return rows.map(r => toCard(r.addressee, r.id, null, borders.get(r.addressee.id) ?? null));
 }
 
 const profileSelect = {
@@ -129,9 +138,15 @@ type ProfileRow = {
   _count: { medals: number; works: number };
 };
 
-function toCard(u: ProfileRow, friendshipId: string, since: Date | null): FriendCard {
+function toCard(
+  u: ProfileRow,
+  friendshipId: string,
+  since: Date | null,
+  border: string | null = null
+): FriendCard {
   return {
     id:         u.id,
+    border,
     handle:     u.handle,
     username:   u.username,
     avatarUrl:  u.avatarUrl,

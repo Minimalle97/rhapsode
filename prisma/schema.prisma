@@ -59,6 +59,16 @@ model User {
   posts            Post[]
   postLikes        PostLike[]
 
+  /// Vilken gruppbard som bars just nu, som gruppens slug. Null = ingen.
+  ///
+  /// Att BARA en bard kraver Pro; att FORTJANA den gor det inte. Falten ar
+  /// darfor skilda: GroupAward ar bedriften och overlever att en
+  /// prenumeration tar slut, det har ar bara vad som ritas runt bilden.
+  /// Slutar nagon betala slocknar barden, men bedriften star kvar.
+  profileBorder String?
+
+  groupAwards GroupAward[]
+
   duelsSent   Duel[]        @relation("duelChallenger")
   duelsFaced  Duel[]        @relation("duelOpponent")
   duelsWon    Duel[]        @relation("duelWinner")
@@ -100,6 +110,14 @@ model Work {
   /// nagon ovar pa kan vara ett tal till en begravning. Den som vill visa
   /// vad de arbetar med far saga till, inte tvartom.
   visibility String @default("private")
+
+  /// Loptnumret i repertoaren (1-762), nar verket lades till DARIFRAN.
+  ///
+  /// Satt bara pa den vagen, och da ar kopplingen exakt. Verk som redan
+  /// lag i biblioteket kanns i stallet igen pa titel och upphovsperson —
+  /// se lib/repertoire.ts. Stampeln vinner nar bada finns, for den ar ett
+  /// val nagon gjort och inte en gissning.
+  canonicalId Int?
 
   parts        Part[]
   sections     Section[]
@@ -621,4 +639,36 @@ model DuelAttempt {
 
   @@index([duelId, userId, wordsCorrect])
   @@index([duelId, createdAt])
+}
+
+/// En avklarad grupp ur repertoaren.
+///
+/// Grupperna sjalva ligger inte i databasen — de ar 24 rader statisk
+/// referensdata i lib/repertoire/data.ts och byter aldrig innehall per
+/// anvandare. Har star bara DET SOM HANT: att nagon tagit hela gruppen,
+/// och om de last upp barden.
+///
+/// Tva tidpunkter, med flit atskilda:
+///
+///   earnedAt   — gruppen blev klar. Delas ut automatiskt vid avstamning
+///                och kraver ingen plan. Bedriften ar allas.
+///   unlockedAt — lasset klickades och barden togs i bruk. Kraver Pro.
+///
+/// Att de ar skilda ar hela poangen. En gratisanvandare som tar
+/// Shakespeare ska se att de gjort det, och se exakt vad som ligger
+/// bakom lasset. Den dagen de betalar finns bedriften redan dar och
+/// vantar — den behover inte goras om.
+model GroupAward {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Gruppens slug, t.ex. "the-romantics". Se lib/repertoire/data.ts.
+  groupId String
+
+  earnedAt   DateTime  @default(now())
+  unlockedAt DateTime?
+
+  @@unique([userId, groupId])
+  @@index([userId])
 }

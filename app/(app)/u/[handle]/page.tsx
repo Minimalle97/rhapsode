@@ -14,6 +14,8 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { friendState, resolveHandle } from "@/lib/friends";
+import { wornBorders } from "@/lib/repertoire";
+import { Avatar } from "@/components/profile/Avatar";
 import { sharedLibrary } from "@/lib/sharedLibrary";
 import { postsBy, canSeePosts } from "@/lib/posts";
 import { getRank, getNextRank } from "@/lib/xp";
@@ -78,6 +80,10 @@ export default async function PublicProfile({ params }: Props) {
   // ar arligare an en knapp som inte finns. Servern kontrollerar igen.
   const ent = await getEntitlements(viewer);
 
+  // Barden de bar. Kontrollen av att de FAR bara den — gruppen klar,
+  // lasset oppnat, prenumerationen aktiv — sitter i wornBorders.
+  const border = (await wornBorders([person.id])).get(person.id) ?? null;
+
   const rank     = getRank(person.xp);
   const next     = getNextRank(person.xp);
   const progress = next
@@ -117,21 +123,12 @@ export default async function PublicProfile({ params }: Props) {
 
       {/* Huvud */}
       <div style={{ display: "flex", gap: "18px", alignItems: "flex-start", marginBottom: "28px" }}>
-        <div style={{
-          width: "68px", height: "68px", borderRadius: "50%",
-          background: "var(--bg3)", border: "1px solid var(--bord)",
-          overflow: "hidden", flexShrink: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          {person.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={person.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <span style={{ fontFamily: "var(--fd)", fontSize: "26px", color: "var(--gold)" }}>
-              {person.username[0]?.toUpperCase() ?? "?"}
-            </span>
-          )}
-        </div>
+        <Avatar
+          username={person.username}
+          avatarUrl={person.avatarUrl}
+          border={border}
+          size={68}
+        />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{

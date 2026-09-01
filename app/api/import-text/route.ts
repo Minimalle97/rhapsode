@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { getEntitlements } from "@/lib/billing/entitlements";
+import { TOTAL_ENTRIES } from "@/lib/repertoire/data";
 import { assertWorkAllowance } from "@/lib/billing/limits";
 import { rateLimit, toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
@@ -45,6 +46,8 @@ export async function POST(req: NextRequest) {
     let text        = "";
     let title       = "";
     let author      = "";
+    // Loptnumret i repertoaren, nar verket lades till darifran.
+    let canonicalId: number | null = null;
     let filename    = "";
     let targetWords = 60;
     let pageCount: number | null = null;
@@ -66,6 +69,7 @@ export async function POST(req: NextRequest) {
 
       title       = String(form.get("title")  ?? "").trim();
       author      = String(form.get("author") ?? "").trim();
+      canonicalId = repertoireId(form.get("canonicalId"));
       targetWords = clampWords(form.get("targetWords"));
     } else {
       const body    = await req.json();
@@ -78,6 +82,7 @@ export async function POST(req: NextRequest) {
       text        = cleanText(truncated ? rawText.slice(0, MAX_CHARS) : rawText);
       title       = String(body.title  ?? "").trim();
       author      = String(body.author ?? "").trim();
+      canonicalId = repertoireId(body.canonicalId);
       targetWords = clampWords(body.targetWords);
     }
 
@@ -137,6 +142,7 @@ export async function POST(req: NextRequest) {
         practiceAdvice:   meta.practiceAdvice || null,
         difficulty:       meta.difficulty,
         estimatedMinutes: meta.estimatedMinutes,
+        canonicalId,
       },
       select: { id: true, title: true, author: true },
     });
@@ -221,4 +227,18 @@ function clampWords(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 60;
   return Math.min(300, Math.max(20, Math.round(n)));
+}
+
+/**
+ * Loptnumret ur en repertoarlank, eller null.
+ *
+ * Saneras har och inte i klienten: numret avgor vilken grupp verket
+ * raknas till, och en grupp som blir klar av ett paphittat nummer vore
+ * en medalj ingen fortjanat. Utanfor 1-762 finns ingen dikt, och da
+ * behandlas det som om det inte fanns.
+ */
+function repertoireId(raw: unknown): number | null {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > TOTAL_ENTRIES) return null;
+  return n;
 }

@@ -19,21 +19,34 @@
 
 import { useClerk } from "@clerk/nextjs";
 import type { CSSProperties } from "react";
+import { borderById } from "@/lib/repertoire/borders";
 
 interface AvatarUploadProps {
   username:  string;
   avatarUrl: string | null;
+  /**
+   * Gruppbarden som bars, eller null.
+   *
+   * Servern har redan avgjort om den FAR visas — att gruppen ar klar,
+   * lasset oppnat och prenumerationen aktiv. Den har filen ritar bara.
+   */
+  border?:   string | null;
 }
 
-export function AvatarUpload({ username, avatarUrl }: AvatarUploadProps) {
+export function AvatarUpload({ username, avatarUrl, border = null }: AvatarUploadProps) {
   const { openUserProfile } = useClerk();
+  const ring = borderById(border);
 
-  return (
+  const button = (
     <button
       type="button"
       onClick={() => openUserProfile()}
       title="Change your picture"
-      style={wrap}
+      style={{
+        ...wrap,
+        // Ringen ager kanten nar en bard bars, sa den egna ramen tas bort.
+        ...(ring ? { border: "none", width: "76px", height: "76px" } : {}),
+      }}
     >
       {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -44,6 +57,30 @@ export function AvatarUpload({ username, avatarUrl }: AvatarUploadProps) {
 
       <span style={hint}>Change</span>
     </button>
+  );
+
+  if (!ring) return button;
+
+  return (
+    <span
+      title={`${ring.name} — held entire`}
+      style={{
+        display: "inline-flex", flexShrink: 0,
+        padding: "3px", borderRadius: "50%",
+        background: `linear-gradient(${ring.angle}deg, ${ring.from}, ${ring.to})`,
+        position: "relative",
+      }}
+    >
+      {button}
+      <span style={{
+        position: "absolute", bottom: "-4px", left: "50%",
+        transform: "translateX(-50%)",
+        fontSize: "15px", lineHeight: 1, color: ring.from,
+        background: "var(--bg)", borderRadius: "999px", padding: "2px 7px",
+      }}>
+        {ring.mark}
+      </span>
+    </span>
   );
 }
 

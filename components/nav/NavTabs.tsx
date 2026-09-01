@@ -5,11 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
-  { href: "/today",    label: "Today"    },
-  { href: "/library",  label: "Library"  },
-  { href: "/friends",  label: "Friends"  },
-  { href: "/progress", label: "Progress" },
-  { href: "/profile",  label: "Profile"  },
+  { href: "/today",      label: "Today"      },
+  { href: "/library",    label: "Library"    },
+  { href: "/repertoire", label: "Repertoire" },
+  { href: "/friends",    label: "Friends"    },
+  { href: "/progress",   label: "Progress"   },
+  { href: "/profile",    label: "Profile"    },
 ];
 
 export interface NavNotices {

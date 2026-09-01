@@ -19,6 +19,11 @@ import { BioEditor } from "@/components/profile/BioEditor";
 import { PostFeed } from "@/components/friends/PostFeed";
 import { postsBy } from "@/lib/posts";
 import { BackupPanel } from "@/components/sync/BackupPanel";
+import { BorderPicker } from "@/components/repertoire/BorderPicker";
+import { GroupMedals } from "@/components/repertoire/GroupMedals";
+import {
+  repertoireState, progressFor, syncGroupAwards, awardsFor, wornBorder,
+} from "@/lib/repertoire";
 
 export default async function ProfilePage() {
   const user = await requireUser();
@@ -37,6 +42,17 @@ export default async function ProfilePage() {
       select: { id: true, sections: { select: { status: true } } },
     }),
     postsBy(user.id, user.id),
+  ]);
+
+  // Repertoaren: vad som ar avklarat, vad som ar upplast och vad som bars.
+  // Avstamningen kors aven har, sa att en grupp som blev klar medan man
+  // ovade syns pa profilen utan att man forst maste ga till listan.
+  const state     = await repertoireState(user.id);
+  const groupBars = progressFor(state);
+  await syncGroupAwards(user.id, groupBars);
+  const [awards, worn] = await Promise.all([
+    awardsFor(user.id),
+    wornBorder(user.id, ent.isPro),
   ]);
 
   const rank     = getRank(user.xp);
@@ -67,6 +83,7 @@ export default async function ProfilePage() {
        <AvatarUpload
   username={user.username}
   avatarUrl={user.avatarUrl}
+  border={worn}
 />
         <div style={{ flex: 1, minWidth: 0 }}>
           <UsernameEdit initialUsername={user.username} />
@@ -223,6 +240,39 @@ export default async function ProfilePage() {
           ))}
         </div>
       )}
+
+      {/* ── Group medals ── */}
+      <GroupMedals
+        awards={groupBars
+          .filter(p => awards.has(p.group.id))
+          .map(p => ({
+            id:       p.group.id,
+            name:     p.group.name,
+            numeral:  p.group.numeral,
+            total:    p.total,
+            earnedAt: awards.get(p.group.id)!.earnedAt.toISOString(),
+            unlocked: awards.get(p.group.id)!.unlockedAt !== null,
+          }))}
+      />
+
+      {/* ── Borders ── */}
+      <div style={{ marginBottom: "12px", marginTop: "36px" }}>
+        <h2 style={{ fontFamily: "var(--fd)", fontSize: "22px", fontWeight: 300, color: "var(--parch)", letterSpacing: "0.06em" }}>
+          Border
+        </h2>
+      </div>
+      <div style={{ marginBottom: "36px" }}>
+        <BorderPicker
+          current={worn}
+          isPro={ent.isPro}
+          states={groupBars.map(p => ({
+            id:        p.group.id,
+            earned:    awards.has(p.group.id),
+            unlocked:  awards.get(p.group.id)?.unlockedAt != null,
+            remaining: p.total - p.held,
+          }))}
+        />
+      </div>
 
       {/* ── Posts ── */}
       <div style={{ marginBottom: "12px" }}>

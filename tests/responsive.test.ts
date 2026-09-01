@@ -78,7 +78,13 @@ describe("the phone gets a tab bar it can reach", () => {
   it("gives every tab a thumb-sized target", () => {
     // 15px over och under plus radhojden ger 44px, vilket ar den
     // vedertagna undre gransen for nagot man trycker pa med tummen.
-    expect(css).toMatch(/\.nav-tab \{[\s\S]*?padding: 15px 2px/);
+    //
+    // Bara den LODRATA halvan provas. Den vagrata andrades fran 2px till
+    // 1px nar repertoaren blev en sjatte flik och raden skulle rymma ett
+    // ord till; det ror inte hojden, och det ar hojden som avgor om en
+    // flik gar att traffa. Ett prov som last hela strangen hade gatt
+    // sonder pa en andring det inte hade nagon asikt om.
+    expect(css).toMatch(/\.nav-tab \{[\s\S]*?padding: 15px \d+px/);
   });
 });
 
