@@ -67,7 +67,9 @@ model User {
   /// Slutar nagon betala slocknar barden, men bedriften star kvar.
   profileBorder String?
 
-  groupAwards GroupAward[]
+  groupAwards   GroupAward[]
+  drillSettings DrillSettings?
+  drillAttempts DrillAttempt[]
 
   duelsSent   Duel[]        @relation("duelChallenger")
   duelsFaced  Duel[]        @relation("duelOpponent")
@@ -169,6 +171,7 @@ model Section {
 
   practiceSessions PracticeSession[]
   weakness         SectionWeakness?
+  drillAttempts    DrillAttempt[]
 
   @@index([workId, orderIndex])
   @@index([partId, orderIndex])
@@ -709,4 +712,75 @@ model SectionWeakness {
   /// visas ingenting alls — se lib/weakSpots.ts.
   attempts  Float    @default(0)
   updatedAt DateTime @updatedAt
+}
+
+/// Instalningarna for Skelett-drillen, sparade per anvandare.
+///
+/// En rad per person, inte per verk. Skalet ar att det ar en instalning
+/// om HUR MYCKET STOD man vill ha, och det foljer personen och deras
+/// vana — inte den enskilda dikten. Den som klarar en bokstav per ord
+/// klarar det i alla texter, och att stalla om det verk for verk vore
+/// arbete utan nytta.
+model DrillSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// 1, 2 eller 3. Hur manga begynnelsebokstaver som star kvar.
+  lettersPerWord    Int     @default(1)
+  /// 0, 1 eller 2. Hur manga ord i borjan av raden som star helt kvar.
+  wholeWordsPerLine Int     @default(0)
+  /// Pa: strecken ar lika manga som de dolda tecknen, sa langden syns.
+  showWordLength    Boolean @default(true)
+  /// Pa: ord pa hogst tre tecken star kvar hela.
+  keepShortWords    Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Ett drillkort som visats, och vad anvandaren sade om det.
+///
+/// En rad per kort. Det ar mycket data pa sikt, men det ar ocksa det enda
+/// underlaget for fas 3: att schemalagga ENSKILDA rader och skarvar i
+/// stallet for hela texter. Utan raden per kort finns ingen historik att
+/// schemalagga ur.
+///
+/// ── Om lineIndex ──────────────────────────────────────────────────────
+///
+/// Raden pekas ut med sitt NUMMER i sektionen, inte med ett eget id, for
+/// att rader inte finns som egna poster — en sektions text ar en strang
+/// med radbrytningar i. Foljden ar att en redigering som skjuter in en
+/// rad i mitten far aldre rader att peka pa grannen. Det ar harmlost for
+/// sjalva drillen och blir en riktig fraga forst i fas 3, dar det tas upp
+/// pa nytt.
+model DrillAttempt {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  /// skeleton | cumulative | seam | cold_start | backward
+  drill String
+
+  /// Radens nummer i sektionen, nollbaserat.
+  lineIndex Int
+
+  /// got_it | hesitated | missed
+  mark String
+
+  /// Millisekunder fran att kortet visades till att Reveal trycktes.
+  /// Drill 7: samlas in nu, visas inte an.
+  msToReveal Int?
+
+  /// Sant nar Peek anvandes. Ett kort med en tjuvtitt ar inte samma sak
+  /// som ett utan, aven om bada markerats "got it".
+  peeked Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([sectionId, lineIndex])
+  @@index([userId, drill, mark])
 }

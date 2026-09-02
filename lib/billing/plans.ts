@@ -43,6 +43,7 @@ export const FEATURE = {
   PERSONALIZED_STUDY:  "PERSONALIZED_STUDY",
   BASIC_CLEANUP:       "BASIC_CLEANUP",
   ADVANCED_CLEANUP:    "ADVANCED_CLEANUP",
+  DRILLS:              "DRILLS",
 } as const;
 
 export type Feature = (typeof FEATURE)[keyof typeof FEATURE];
@@ -64,6 +65,15 @@ export interface PlanLimits {
    * tillsammans känns som en gräns som är för snäv.
    */
   advancedCleanupMonthly: number;
+  /**
+   * Drillkort per dygn.
+   *
+   * Gratis far en ranson, inte ett hanglas. Samma val som djupstadningen:
+   * ett las ber om pengar innan nagon vet vad de koper, en ranson ber om
+   * dem i det ogonblick de precis sett vad den gor. Tjugo kort ar en
+   * riktig ovningsomgang — nog for att drillen ska hinna bevisa sig.
+   */
+  drillsDaily: number;
 }
 
 /** Miljövariabel som heltal, med ett värde att falla tillbaka på. */
@@ -80,12 +90,14 @@ export const LIMITS: Record<PlanId, PlanLimits> = {
     aiBurstPerMinute: envInt("FREE_AI_BURST_PER_MINUTE", 3),
     savedWorks:       envInt("FREE_SAVED_WORKS_LIMIT", 3),
     advancedCleanupMonthly: envInt("FREE_ADVANCED_CLEANUP_LIMIT", 2),
+    drillsDaily:            envInt("FREE_DRILLS_DAILY_LIMIT", 20),
   },
   pro: {
     aiMonthly:        envInt("PRO_AI_MONTHLY_LIMIT", 100),
     aiBurstPerMinute: envInt("PRO_AI_BURST_PER_MINUTE", 10),
     savedWorks:       envInt("PRO_SAVED_WORKS_LIMIT", Number.MAX_SAFE_INTEGER),
     advancedCleanupMonthly: envInt("PRO_ADVANCED_CLEANUP_LIMIT", Number.MAX_SAFE_INTEGER),
+    drillsDaily:            envInt("PRO_DRILLS_DAILY_LIMIT", Number.MAX_SAFE_INTEGER),
   },
 };
 
@@ -106,6 +118,9 @@ export const ENTITLEMENTS: Record<PlanId, readonly Feature[]> = {
     // någon vet vad de köper, en förbrukad ranson ber om dem i det
     // ögonblick de precis sett vad den gör.
     FEATURE.ADVANCED_CLEANUP,
+    // Drillarna foljer samma regel: inte lasta, men rantionerade.
+    // Se LIMITS.free.drillsDaily.
+    FEATURE.DRILLS,
   ],
   pro: [
     FEATURE.BASIC_RECITATION,
@@ -122,6 +137,7 @@ export const ENTITLEMENTS: Record<PlanId, readonly Feature[]> = {
     FEATURE.PERSONALIZED_STUDY,
     FEATURE.BASIC_CLEANUP,
     FEATURE.ADVANCED_CLEANUP,
+    FEATURE.DRILLS,
   ],
 };
 

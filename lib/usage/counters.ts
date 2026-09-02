@@ -19,7 +19,9 @@ export type CounterScope =
   | "ai_burst"
   | "http_burst"
   /** Djupstadningar per manad. Egen ranson, skild fran generationerna. */
-  | "cleanup_month";
+  | "cleanup_month"
+  /** Drillkort per dygn. Gratisplanens ranson — se LIMITS.drillsDaily. */
+  | "drill_day";
 
 export interface ConsumeResult {
   allowed:   boolean;
@@ -43,6 +45,19 @@ export function monthWindow(now: Date = new Date()): Window {
 }
 
 /** Fast fönster om N sekunder. Grovt men förutsägbart. */
+/**
+ * Dygnet, raknat i UTC.
+ *
+ * UTC och inte lokal tid, av samma skal som manadsfonstret: en anvandare
+ * som reser over en tidszon ska inte fa en extra ranson pa kopet, och
+ * servern ska inte behova veta var nagon befinner sig.
+ */
+export function dayWindow(now: Date = new Date()): Window {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const expiresAt = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, expiresAt };
+}
+
 export function slidingWindow(seconds: number, now: Date = new Date()): Window {
   const ms = seconds * 1000;
   const start = new Date(Math.floor(now.getTime() / ms) * ms);
