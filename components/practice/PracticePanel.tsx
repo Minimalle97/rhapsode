@@ -140,6 +140,23 @@ export function PracticePanel({
             ))}
           </div>
 
+          {/*
+            De andra satten att arbeta med samma verk.
+            Star har, direkt under lagesvaljaren, for att det ar HAR man
+            har bestamt sig for att ova — och da ar det ocksa har man kan
+            komma pa att man hellre vill lasa igenom det, drilla det eller
+            ta det i takt. Pa verkssidan konkurrerade de med rubriken och
+            sag ut som installningar.
+
+            Dampade med flit: de fyra ovanfor ar valet man kom for att
+            gora, de tre har ar utvagar.
+          */}
+          <div style={otherWaysRow}>
+            <Link href={`/work/${workId}/read`} style={otherWayBtn}>Read it through</Link>
+            <Link href={`/work/${workId}/drills`} style={otherWayBtn}>Drills</Link>
+            <Link href={`/work/${workId}/recite`} style={otherWayBtn}>Recite to a beat</Link>
+          </div>
+
           <div style={cardStyle}>
             {mode === "read" && (
               <ReadMode key={attemptKey} content={content} onComplete={(q) => handleComplete(q)} />
@@ -266,6 +283,24 @@ const titleStyle: CSSProperties = {
   color:         "var(--parch)",
   letterSpacing: "0.03em",
   marginBottom:  "24px",
+};
+
+const otherWaysRow: CSSProperties = {
+  display:      "flex",
+  gap:          "6px",
+  flexWrap:     "wrap",
+  marginBottom: "18px",
+};
+
+const otherWayBtn: CSSProperties = {
+  padding:        "6px 12px",
+  borderRadius:   "var(--r3)",
+  border:         "1px solid var(--bord)",
+  background:     "transparent",
+  color:          "var(--muted)",
+  fontSize:       "12px",
+  textDecoration: "none",
+  whiteSpace:     "nowrap",
 };
 
 const tabRowStyle: CSSProperties = {

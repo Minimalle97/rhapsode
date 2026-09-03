@@ -90,6 +90,7 @@ export default async function ReadSectionPage({ params }: Props) {
       isPro={ent.isPro}
       spans={spans}
       hasHistory={weakness?.enough ?? false}
+      saturated={weakness?.saturated ?? false}
     />
   );
 }

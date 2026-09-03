@@ -322,19 +322,6 @@ export default async function WorkPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/*
-        Satten att arbeta med texten, dar man faktiskt valjer att gora
-        det. Ligger ovanfor "Continue" sa att den som kommit for att ova
-        ser bade den vanliga vagen in och de andra i samma blick.
-      */}
-      {total > 0 && (
-        <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginBottom: "14px" }}>
-          <Link href={`/work/${work.id}/read`} style={practiceBtn}>Read it through</Link>
-          <Link href={`/work/${work.id}/drills`} style={practiceBtn}>Drills</Link>
-          <Link href={`/work/${work.id}/recite`} style={practiceBtn}>Recite to a beat</Link>
-        </div>
-      )}
-
       {nextSection && (
         <Link href={`/practice/${work.id}/${nextSection.id}`} style={{ textDecoration: "none", display: "block", marginBottom: "26px" }}>
           <div style={{
@@ -588,18 +575,6 @@ const backLink: React.CSSProperties = {
   fontSize: "13px", color: "var(--muted)",
   textDecoration: "none", display: "inline-block", marginBottom: "24px",
 };
-/** Ovningslagena. Dampade — de star bredvid "Continue", inte i stallet. */
-const practiceBtn: React.CSSProperties = {
-  padding:        "7px 14px",
-  borderRadius:   "var(--r3)",
-  border:         "1px solid var(--bord)",
-  background:     "transparent",
-  color:          "var(--parch2)",
-  fontSize:       "12.5px",
-  textDecoration: "none",
-  whiteSpace:     "nowrap",
-};
-
 const eyebrow: React.CSSProperties = {
   fontSize: "10px", letterSpacing: "0.2em",
   color: "var(--gold)", textTransform: "uppercase", marginBottom: "8px",

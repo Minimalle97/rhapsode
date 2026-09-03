@@ -7,7 +7,7 @@
 // En dold knapp ar ingen grans.
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { DRILLS, drillById, isMark } from "@/lib/drills";
 import { ENTITLEMENTS, LIMITS, FEATURE } from "@/lib/billing/plans";
@@ -89,11 +89,26 @@ describe("the check happens on the server", () => {
 
 // ── Katalogen ─────────────────────────────────────────────────────────
 describe("the drill catalogue", () => {
-  it("has Skeleton built and the rest declared but not pretending", () => {
-    expect(drillById("skeleton")?.ready).toBe(true);
-    for (const id of ["cumulative", "seam", "cold_start", "backward"]) {
+  it("has the built drills marked ready and the rest not pretending", () => {
+    // Skeleton och Cumulative ar byggda. De ovriga star kvar i listan sa
+    // att man ser vad som kommer, men de gar inte att klicka pa — se
+    // provet nedan om att bara fardiga drillar far en lank.
+    for (const id of ["skeleton", "cumulative"]) {
+      expect(drillById(id), id).toBeDefined();
+      expect(drillById(id)?.ready, id).toBe(true);
+    }
+    for (const id of ["seam", "cold_start", "backward"]) {
       expect(drillById(id), id).toBeDefined();
       expect(drillById(id)?.ready, id).toBe(false);
+    }
+  });
+
+  it("gives every ready drill a page to land on", () => {
+    // En drill markerad som fardig men utan sida ger en 404 fran en lank
+    // appen sjalv ritade ut.
+    for (const drill of DRILLS.filter(d => d.ready)) {
+      const page = path.join(ROOT, "app/(app)/work/[id]/drills", drill.id, "page.tsx");
+      expect(existsSync(page), `${drill.id} has no page`).toBe(true);
     }
   });
 

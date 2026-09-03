@@ -56,7 +56,7 @@ export const DRILLS: readonly DrillSpec[] = [
     blurb: "The text cut down to its opening letters. Say the line aloud, then reveal.",
   },
   {
-    id: "cumulative", ready: false,
+    id: "cumulative", ready: true,
     name:  "Cumulative build",
     blurb: "Line one. Then one and two. Then one to three, and on.",
   },

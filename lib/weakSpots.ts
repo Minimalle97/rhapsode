@@ -56,8 +56,14 @@ const DECAY = 0.82;
  * stallen HITTAS PA. Ett enda forsok racker inte for att veta nagot —
  * forsta gangen man laser en strof missar man det mesta, och det sager
  * bara att man just borjat.
+ *
+ * RATTAT: vardet var 2.2, vilket i praktiken kravde TRE rattade forsok.
+ * Dampningen gor att forsoken summerar till 1.00, 1.82, 2.49 … — tva
+ * forsok nadde alltsa aldrig fram, och kryssrutan gick inte att klicka i
+ * for nagon som gjort precis det kommentaren ovan beskriver som nog.
+ * 1.5 slapper igenom vid tva, vilket var avsikten hela tiden.
  */
-const MIN_ATTEMPTS = 2.2;
+const MIN_ATTEMPTS = 1.5;
 
 /**
  * Hur tungt en miss vager, efter hur mycket stod som var framme.
@@ -329,19 +335,38 @@ export interface SectionWeakness {
   enough:   boolean;
   attempts: number;
   words:    WeakWord[];
+  /**
+   * Sant nar sa gott som HELA sektionen var svag.
+   *
+   * Da ar det inte ett svagt stalle utan en text man annu inte kan, och
+   * markeringen sags upp: se filtret i toWeakness().
+   */
+  saturated: boolean;
 }
 
-const EMPTY: SectionWeakness = { enough: false, attempts: 0, words: [] };
+const EMPTY: SectionWeakness = { enough: false, attempts: 0, words: [], saturated: false };
+
+/**
+ * Over sa har stor andel svaga ord ar sektionen inte svag i ett stalle —
+ * den ar olard.
+ *
+ * Med tva forsok pa en ny dikt ligger nittio procent av orden over
+ * troskeln, och en text dar allt ar markerat sager exakt lika mycket som
+ * en dar inget ar det. Da visas hellre ingenting, med en rad som sager
+ * varfor.
+ */
+const SATURATION = 0.5;
 
 function toWeakness(row: { words: unknown; attempts: number } | null): SectionWeakness {
   if (!row) return EMPTY;
   if (row.attempts < MIN_ATTEMPTS) {
-    return { enough: false, attempts: row.attempts, words: [] };
+    return { enough: false, attempts: row.attempts, words: [], saturated: false };
   }
 
   const map = readMap(row.words);
-  const words: WeakWord[] = [];
+  const tracked = Object.values(map).filter(([, a]) => a > 0).length;
 
+  const words: WeakWord[] = [];
   for (const [key, [m, a]] of Object.entries(map)) {
     if (a <= 0) continue;
     const rate = m / a;
@@ -354,7 +379,22 @@ function toWeakness(row: { words: unknown; attempts: number } | null): SectionWe
   }
 
   words.sort((x, y) => x.index - y.index);
-  return { enough: true, attempts: row.attempts, words };
+
+  // Ar nastan allt svagt ar ingenting det.
+  //
+  // Forst hojs kravet till bara det varsta — ofta racker det for att
+  // skilja ut de verkliga stallena ur en text man borjat fa grepp om.
+  // Ar aven det mesta kvar ar sektionen helt enkelt inte inlard an, och
+  // da ar en helt overstruken dikt ingen upplysning.
+  if (tracked > 0 && words.length / tracked > SATURATION) {
+    const worst = words.filter(w => w.severity === "severe");
+    if (worst.length / tracked <= SATURATION) {
+      return { enough: true, attempts: row.attempts, words: worst, saturated: false };
+    }
+    return { enough: true, attempts: row.attempts, words: [], saturated: true };
+  }
+
+  return { enough: true, attempts: row.attempts, words, saturated: false };
 }
 
 export async function weaknessFor(sectionId: string): Promise<SectionWeakness> {

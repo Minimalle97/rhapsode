@@ -44,6 +44,12 @@ interface Props {
   spans:     WeakSpan[];
   /** Sant nar det finns nog med historik for att markeringen ska betyda nagot. */
   hasHistory: boolean;
+  /**
+   * Sant nar sa gott som hela sektionen var svag — alltsa en text man
+   * annu inte kan. Da visas inga markeringar, och rutan sager varfor i
+   * stallet for att bara sitta tom.
+   */
+  saturated?: boolean;
 }
 
 const SEEN_KEY = "rhapsode.weakspots.explained";
@@ -56,34 +62,39 @@ const WORST_LABEL: Record<"moderate" | "strong" | "severe", string> = {
 
 export function ReadingView({
   workId, workTitle, author, section, position, total,
-  prevId, nextId, firstId, isPro, spans, hasHistory,
+  prevId, nextId, firstId, isPro, spans, hasHistory, saturated = false,
 }: Props) {
   const router = useRouter();
 
   const [highlight, setHighlight] = useState(false);
-  const [explained, setExplained] = useState(true);
+  // Sant bara den gang forklaringen faktiskt ska visas.
+  const [showNotice, setShowNotice] = useState(false);
 
   const canHighlight = isPro && hasHistory;
   const done = nextId === null;
 
-  // Forklaringen visas EN gang, forsta gangen nagon slar pa markeringen.
-  // Att upprepa den vid varje sektion vore att forklara samma sak tolv
-  // ganger for den som redan forstatt.
-  useEffect(() => {
-    try {
-      setExplained(window.localStorage.getItem(SEEN_KEY) === "1");
-    } catch {
-      // Privat lage, eller blockerad lagring. Da visas den inte alls,
-      // vilket ar battre an att den visas vid varje sektion.
-      setExplained(true);
-    }
-  }, []);
-
+  /**
+   * Slar pa markeringen, och forklarar den forsta gangen.
+   *
+   * Lagringen lases HAR och inte i en effekt vid montering. Att spegla
+   * den till state pa vagen in ar en extra rendering vid varje sidladdning
+   * for en uppgift som bara behovs i det ogonblick nagon kryssar i rutan
+   * — och React sager ifran om setState i en effekt, med ratta.
+   *
+   * Gar lagringen inte att lasa (privat lage, blockerade kakor) visas
+   * ingen forklaring alls. Det ar battre an att visa den vid varje
+   * sektion, vilket vore alternativet.
+   */
   function toggle(on: boolean) {
     setHighlight(on);
-    if (on && !explained) {
-      try { window.localStorage.setItem(SEEN_KEY, "1"); } catch { /* strunt i det */ }
-    }
+    if (!on) return;
+
+    try {
+      if (window.localStorage.getItem(SEEN_KEY) !== "1") {
+        setShowNotice(true);
+        window.localStorage.setItem(SEEN_KEY, "1");
+      }
+    } catch { /* ingen lagring — hoppa over forklaringen */ }
   }
 
   // Piltangenter bladdrar. Den som laser en pjas pa fyrtio sektioner ska
@@ -154,9 +165,10 @@ export function ReadingView({
         on={highlight}
         onChange={toggle}
         found={spans.length}
+        saturated={saturated}
       />
 
-      {highlight && !explained && spans.length > 0 && (
+      {highlight && showNotice && spans.length > 0 && (
         <p style={notice}>
           Your weak spots are highlighted in orange, based on where the text has
           actually slipped in your own practice. They fade as it starts to hold.
@@ -267,10 +279,10 @@ export function ReadingView({
  * kvar och beratter varfor den inte gar att anvanda an.
  */
 function WeakSpotToggle({
-  isPro, hasHistory, canHighlight, on, onChange, found,
+  isPro, hasHistory, canHighlight, on, onChange, found, saturated,
 }: {
   isPro: boolean; hasHistory: boolean; canHighlight: boolean;
-  on: boolean; onChange: (v: boolean) => void; found: number;
+  on: boolean; onChange: (v: boolean) => void; found: number; saturated: boolean;
 }) {
   const id = "weak-spot-toggle";
 
@@ -302,10 +314,26 @@ function WeakSpotToggle({
         )}
         {isPro && !hasHistory && (
           <span style={{ display: "block", fontSize: "11.5px", color: "var(--muted)", marginTop: "3px" }}>
-            Practise this text first to unlock personalised weak-spot highlights.
+            {/*
+              Sag vad som SAKNAS, inte bara att nagot gor det.
+              "Practise this text first" var missvisande for nagon som
+              redan ovat en hel del — det som behovs ar rattade forsok,
+              och bara Write och Recite ar rattade. Read och Hide lamnar
+              ingen jamforelse att rakna pa.
+            */}
+            Needs two goes at this section in <strong>Write</strong> or{" "}
+            <strong>Recite</strong> — those are marked word by word, which is
+            what the highlights are built from.
           </span>
         )}
-        {canHighlight && on && found === 0 && (
+        {canHighlight && on && saturated && (
+          <span style={{ display: "block", fontSize: "11.5px", color: "var(--muted)", marginTop: "3px" }}>
+            Almost every line is still slipping, so nothing is marked — that
+            would just be the whole poem in orange. Come back once some of it
+            is holding.
+          </span>
+        )}
+        {canHighlight && on && found === 0 && !saturated && (
           <span style={{ display: "block", fontSize: "11.5px", color: "var(--green)", marginTop: "3px" }}>
             Nothing weak here — this section is holding.
           </span>

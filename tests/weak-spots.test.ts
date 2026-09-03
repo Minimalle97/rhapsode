@@ -102,6 +102,7 @@ function weakness(words: Partial<WeakWord>[]): SectionWeakness {
   return {
     enough: true,
     attempts: 5,
+    saturated: false,
     words: words.map(w => ({
       index: 0, rate: 0.5, severity: "strong", misses: 2, ...w,
     })) as WeakWord[],
@@ -144,12 +145,12 @@ describe("grouping weak words into something you can see", () => {
   it("marks nothing without enough history", () => {
     // Kravet var uttryckligt: for en ny text ska inga svaga stallen
     // hittas pa.
-    const thin: SectionWeakness = { enough: false, attempts: 1, words: [] };
+    const thin: SectionWeakness = { enough: false, attempts: 1, words: [], saturated: false };
     expect(spansFor(text, thin)).toEqual([]);
   });
 
   it("marks nothing when there is no history at all", () => {
-    expect(spansFor(text, { enough: false, attempts: 0, words: [] })).toEqual([]);
+    expect(spansFor(text, { enough: false, attempts: 0, words: [], saturated: false })).toEqual([]);
   });
 
   it("ignores an index past the end of the text", () => {
@@ -205,6 +206,26 @@ describe("weakness comes from what the user did", () => {
   it("keeps quiet until there is enough history", () => {
     expect(src).toMatch(/const MIN_ATTEMPTS = /);
     expect(src).toMatch(/row\.attempts < MIN_ATTEMPTS/);
+  });
+
+  it("unlocks on the second graded run, not the third", () => {
+    // Dampningen gor att forsoken summerar till 1.00, 1.82, 2.49 …
+    // Trosken lag pa 2.2, sa tva forsok nadde aldrig fram och rutan gick
+    // inte att klicka i for nagon som gjort precis det som kravdes.
+    const min = Number(src.match(/const MIN_ATTEMPTS = ([\d.]+)/)?.[1]);
+    const afterOne = 1;
+    const afterTwo = 1 * 0.82 + 1;
+    expect(min).toBeGreaterThan(afterOne);
+    expect(min).toBeLessThanOrEqual(afterTwo);
+  });
+
+  it("says nothing when nearly the whole section is weak", () => {
+    // Med tva forsok pa en ny dikt ligger nittio procent av orden over
+    // troskeln. En text dar allt ar markerat upplyser lika lite som en
+    // dar inget ar det — da ar den olard, inte svag i ett stalle.
+    expect(src).toMatch(/const SATURATION = /);
+    expect(src).toMatch(/words\.length \/ tracked > SATURATION/);
+    expect(src).toMatch(/saturated: true/);
   });
 
   it("stores by position, not by the word itself", () => {
