@@ -39,7 +39,6 @@
 import { prisma } from "./db";
 import { entitlementsForPlan, type Entitlements } from "./billing/entitlements";
 import { friendState } from "./friends";
-import { recordMilestone } from "./posts";
 import { gradeAttempt } from "./cue";
 import { accuracyPercent } from "./mastery";
 import { recordWholeWorkAttempt } from "./weakSpots";
@@ -673,22 +672,59 @@ async function awardBattleMedals(
       },
     }).catch(() => {});  // redan utdelad — unikheten gjorde sitt jobb
 
-    // Texten namnger ALDRIG verket, aven om medaljen gor det.
+    // Ingen milstolpe i flodet.
     //
-    // Skillnaden: medaljens titel visas bara nar verket ar publikt — den
-    // kontrollen sitter i MedalCard och pa profilsidan. Ett inlagg har
-    // ingen sadan sil for sin brodtext; posts.ts kan dolja titeln den
-    // LANKAR till, men inte orden i kroppen. Star titeln dar hamnar ett
-    // privat verks namn i vannernas flode, och synlighetsvaljaren ar en
-    // logn. Samma regel foljer framforandena i performanceStore.
-    await recordMilestone(
-      side.userId,
-      side.workId,
-      winnerId === null
-        ? "Fought a duel to a draw."
-        : "Won a duel."
-    ).catch(() => {});
+    // En vunnen tvekamp skrevs tidigare ut som ett inlagg hos vannerna.
+    // Det ar fel stalle: en tvekamp ar nagot som star MELLAN tva personer,
+    // och det som ar intressant ar hur det gatt dem emellan — inte en rad
+    // i ett flode som alla andra scrollar forbi. Stallningen visas i
+    // stallet pa motstandarens profil, dar man faktiskt undrar over den.
+    // Se duelRecordAgainst().
   }
+}
+
+// ── Stallningen mellan tva ────────────────────────────────────────────
+
+export interface DuelRecord {
+  wins:   number;
+  losses: number;
+  draws:  number;
+  /** Alla avgjorda kamper mellan de tva. Noll = de har aldrig motts. */
+  total:  number;
+}
+
+/**
+ * Hur det gatt mellan tva personer, sett fran den forstas hall.
+ *
+ * En fraga, tre siffror. Bara AVGJORDA kamper raknas — en pagaende har
+ * inget utfall an, och en avbojd inbjudan ar ingen match.
+ *
+ * Oavgjort ar sitt eget utfall och inte en halv vinst: bada holl lika
+ * mycket, och det ar nagot annat an att ha vunnit knappt.
+ */
+export async function duelRecordAgainst(
+  userId:  string,
+  otherId: string
+): Promise<DuelRecord> {
+  const rows = await prisma.duel.findMany({
+    where: {
+      status: "finished",
+      OR: [
+        { challengerId: userId,  opponentId:   otherId },
+        { challengerId: otherId, opponentId:   userId  },
+      ],
+    },
+    select: { winnerId: true },
+  });
+
+  let wins = 0, losses = 0, draws = 0;
+  for (const r of rows) {
+    if (r.winnerId === null)      draws  += 1;
+    else if (r.winnerId === userId) wins   += 1;
+    else                            losses += 1;
+  }
+
+  return { wins, losses, draws, total: rows.length };
 }
 
 // ── Vad granssnittet fragar om ────────────────────────────────────────

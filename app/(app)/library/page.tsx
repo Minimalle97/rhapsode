@@ -161,6 +161,7 @@ export default async function LibraryPage({ searchParams }: Props) {
               progress={progressByWork.get(work.id) ?? 0}
               performanceMastered={standings.get(work.id)?.isMastered ?? false}
               masteryAtRisk={standings.get(work.id)?.standing === "at_risk"}
+              masteryDaysLeft={standings.get(work.id)?.daysUntilLapse ?? null}
               duel={(() => {
                 const d = duelBadges.get(work.id);
                 return d ? {

@@ -45,6 +45,11 @@ export function MedalCard({
   const glyph = isBattle ? "⚔" : TYPE_GLYPHS[type] ?? "◇";
   const lost   = Boolean(lostAt);
 
+  // Mastartiteln ar rod, och den ar den enda som ar det.
+  //
+  // Den ar ocksa den enda som kan FORLORAS: slutar man framfora verket
+  // slocknar den. Guldet gick tidigare till SM-2-bemastring, vilket delade
+  // ut samma ord for nagot mycket lattare; den medaljen finns inte langre.
   const accent = lost
     ? "var(--bg4)"
     : isBattle ? "var(--green)" : isPerformance ? "var(--red)" : "var(--gold)";
@@ -53,7 +58,7 @@ export function MedalCard({
   const restingBorder = lost
     ? "var(--bord)"
     : isBattle      ? "rgba(106,158,106,0.32)"
-    : isPerformance ? "rgba(192,95,114,0.3)"
+    : isPerformance ? "rgba(192,95,114,0.55)"
     :                 "var(--bord)";
   const date  = new Date(earnedAt).toLocaleDateString("en-GB", {
     day:   "numeric",
@@ -63,7 +68,10 @@ export function MedalCard({
 
   return (
     <div style={{
-      background:   "var(--bg2)",
+      // Framforandemedaljen far en svag rod grund. Den ska ga att se pa
+      // avstand i en lista av guldkantade rader — det ar husets hogsta
+      // utmarkelse, och den ska inte se ut som de andra.
+      background:   !lost && isPerformance ? "rgba(192,95,114,0.06)" : "var(--bg2)",
       border:       `1px solid ${restingBorder}`,
       opacity:      lost ? 0.55 : 1,
       borderRadius: "var(--r)",

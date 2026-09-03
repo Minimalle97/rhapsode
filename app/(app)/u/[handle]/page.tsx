@@ -15,7 +15,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { friendState, resolveHandle } from "@/lib/friends";
 import { wornBorders } from "@/lib/repertoire";
-import { duelsWithPeople } from "@/lib/duels";
+import { duelsWithPeople, duelRecordAgainst } from "@/lib/duels";
 import { Avatar } from "@/components/profile/Avatar";
 import { sharedLibrary } from "@/lib/sharedLibrary";
 import { postsBy, canSeePosts } from "@/lib/posts";
@@ -58,6 +58,8 @@ export default async function PublicProfile({ params }: Props) {
       id: true, handle: true, username: true, avatarUrl: true, bio: true,
       xp: true, rank: true, streakDays: true, createdAt: true,
       medals: {
+        // Se profilsidan: "work"-medaljerna ar en kvarleva och visas inte.
+        where:   { kind: { not: "work" } },
         orderBy: { earnedAt: "desc" },
         take: 30,
         select: {
@@ -89,6 +91,10 @@ export default async function PublicProfile({ params }: Props) {
   // till nagon man redan slass mot ar bade fel och forvirrande — servern
   // avvisar den anda, men det ska inte behova ga sa langt.
   const duel = (await duelsWithPeople(viewer.id, [person.id])).get(person.id) ?? null;
+
+  // Stallningen er emellan. Star pa profilen och inte i flodet: en tvekamp
+  // ar nagot mellan tva personer, och det ar har man undrar over den.
+  const record = state === "self" ? null : await duelRecordAgainst(viewer.id, person.id);
 
   const rank     = getRank(person.xp);
   const next     = getNextRank(person.xp);
@@ -161,6 +167,23 @@ export default async function PublicProfile({ params }: Props) {
             till nagon man inte kanner ar ett satt att skicka vad som helst
             till nagon man inte kanner — samma regel galler i lib/duels.ts.
           */}
+          {/*
+            Bara siffrorna. Ingen rubrik, ingen ruta — den som vill veta
+            hur det statt sig ser det pa en rad, och den som inte bryr sig
+            laser forbi.
+          */}
+          {record && record.total > 0 && (
+            <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "8px" }}>
+              <span style={{ color: "var(--green)" }}>{record.wins}W</span>
+              {" · "}
+              <span style={{ color: "var(--red)" }}>{record.losses}L</span>
+              {record.draws > 0 && <>{" · "}{record.draws}D</>}
+              <span style={{ color: "var(--bg4)" }}>
+                {"  "}in {record.total} {record.total === 1 ? "duel" : "duels"}
+              </span>
+            </p>
+          )}
+
           {state === "friends" && (
             <DuelInvite
               opponentId={person.id}

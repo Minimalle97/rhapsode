@@ -32,7 +32,10 @@ export default async function ProfilePage() {
 
   const [medals, works, posts] = await Promise.all([
     prisma.medal.findMany({
-      where:   { userId: user.id },
+      // "work"-medaljer utelamnas: de delades ut for SM-2-bemastring innan
+      // regeln andrades, och mastartiteln kommer nu bara fran Performance
+      // Mode. Raderna star kvar i databasen; visningen har slutat.
+      where:   { userId: user.id, kind: { not: "work" } },
       include: { work: { select: { title: true, author: true, type: true, visibility: true } } },
       orderBy: { earnedAt: "desc" },
     }),

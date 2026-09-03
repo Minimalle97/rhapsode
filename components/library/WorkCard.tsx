@@ -28,6 +28,12 @@ interface WorkCardProps {
   performanceMastered:  boolean;
   /** Bemastrad men inte framford pa ett tag. */
   masteryAtRisk:        boolean;
+  /**
+   * Dagar kvar innan mastartiteln faller, eller null nar den inte ar i
+   * fara. Titeln kraver ett godkant framforande med jamna mellanrum — ar
+   * klockan osynlig ar det forsta man far veta att den redan slocknat.
+   */
+  masteryDaysLeft?:     number | null;
   /** Satt nar verket star i en tvekamp. Ger den grona ramen och bubblan. */
   duel?: {
     id:           string;
@@ -40,7 +46,7 @@ interface WorkCardProps {
 
 export function WorkCard({
   work, collections, memberCollectionIds,
-  progress, performanceMastered, masteryAtRisk, duel = null,
+  progress, performanceMastered, masteryAtRisk, masteryDaysLeft = null, duel = null,
 }: WorkCardProps) {
   const total    = work.sections.length;
   const mastered = work.sections.filter(
@@ -127,7 +133,15 @@ export function WorkCard({
           <p style={{ fontSize: "12px", color: "var(--muted)" }}>
             {performanceMastered ? (
               <span style={{ color: "var(--red)" }}>
-                Mastered{masteryAtRisk ? " · perform it soon" : ""}
+                Mastered
+                {masteryDaysLeft !== null && (
+                  <span style={{ color: masteryAtRisk ? "var(--red)" : "var(--muted)" }}>
+                    {" · "}
+                    {masteryDaysLeft <= 0
+                      ? "perform today to keep it"
+                      : `${masteryDaysLeft}d to perform`}
+                  </span>
+                )}
               </span>
             ) : learned ? (
               <span style={{ color: "var(--gold)" }}>Learned · ready to perform</span>

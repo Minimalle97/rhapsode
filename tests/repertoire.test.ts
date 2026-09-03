@@ -238,11 +238,17 @@ describe("group progress", () => {
 describe("what counts as held", () => {
   const src = read("lib/repertoire.ts");
 
-  it("is the work medal, not the performance title", () => {
+  it("is every section holding, not the performance title", () => {
     // Framforandetiteln kraver tio rena genomforanden per verk. En grupp
     // pa sjuttio dikter hade da krävt sjuhundra, och ingen grupp blivit
     // klar nagonsin.
-    expect(src).toMatch(/medals: \{ where: \{ kind: "work" \}/);
+    //
+    // Las tidigare ur en "work"-medalj. Den delas inte ut langre, sa
+    // samma matt raknas nu direkt ur sektionerna — och provet foljer med,
+    // for annars gar repertoaren tyst sonder.
+    expect(src).toMatch(/sections: \{ select: \{ status: true \} \}/);
+    expect(src).toMatch(/work\.sections\.every\(sec => SM2_MASTERED\.includes/);
+    expect(src).not.toMatch(/kind: "work"/);
   });
 
   it("reads the library in one query, not one per poem", () => {

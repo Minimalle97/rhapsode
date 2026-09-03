@@ -39,7 +39,7 @@ export function SharedWorks({ works }: { works: SharedWork[] }) {
               {w.title}
             </p>
             {w.standing.isMastered && (
-              <span style={badge}>Reciter</span>
+              <span style={badge}>Mastered</span>
             )}
           </div>
 
@@ -70,6 +70,20 @@ export function SharedWorks({ works }: { works: SharedWork[] }) {
             <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "8px" }}>
               {w.standing.passed} of {w.standing.required} performances
               {w.standing.bestAccuracy !== null && ` · best ${w.standing.bestAccuracy}%`}
+              {/*
+                Klockan syns aven har. Titeln ar densamma pa profilen som i
+                biblioteket, och da ska villkoret for att behalla den vara
+                lika synligt — annars ser en besokare en rod ram som redan
+                halls pa att slockna utan att nagot antyder det.
+              */}
+              {w.standing.isMastered && w.standing.daysUntilLapse !== null && (
+                <span style={{ color: "var(--red)" }}>
+                  {" · "}
+                  {w.standing.daysUntilLapse <= 0
+                    ? "must perform today"
+                    : `${w.standing.daysUntilLapse}d to perform`}
+                </span>
+              )}
             </p>
           )}
         </div>

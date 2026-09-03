@@ -1,40 +1,47 @@
 // lib/medals.ts
-// Kontrollera om ett verk är färdigt och dela ut medalj + XP.
 //
-// ── RÄTTAT ────────────────────────────────────────────────────────────
-// Funktionen hämtade tidigare hela verket med `sections: true` — alltså
-// varje sektions fulla text — bara för att kolla om alla var bemästrade.
-// Och den körs efter VARJE avslutad övning.
+// XP nar ett helt verk sitter enligt SM-2.
 //
-// Med Divina Commedia i biblioteket lästes hela dikten från databasen
-// varje gång du klickade dig igenom en strof. Det är den enskilt dyraste
-// frågan i appen, och den kördes oftast.
+// ── RATTAT: har delades en medalj ut for fel sak ──────────────────────
 //
-// Nu räknas bara antalet sektioner som inte är klara. Är det noll är
-// verket färdigt. En count-fråga i stället för att läsa hem allt.
+// Funktionen hette tidigare checkAndAwardMedal och gjorde precis det: nar
+// alla sektioner natt "mastered" i SM-2 skapades en guldmedalj och verket
+// kallades bemastrat.
+//
+// Det var fel, och det syntes: ett verk kunde sta som "Mastered" med en
+// medalj pa profilen medan raknaren bredvid sade "0 of 10 performances".
+// Tva olika saker hette samma sak. SM-2 mater att man klarat sektionerna
+// var for sig, med ledtradar, i sin egen takt. Mastartiteln ska sta for
+// nagot mycket hardare — hela verket ur minnet, tio ganger, over 85 %.
+//
+// Nu finns bara EN vag till titeln och medaljen: Performance Mode, via
+// syncMedal() i lib/performanceStore.ts. Den medaljen ar rod, den kan
+// falla om man slutar framfora verket, och den betyder darfor nagot.
+//
+// XP:n star kvar. Att fa varje sektion att sitta ar ett riktigt arbete och
+// ska betala — det ar bara ordet "bemastrad" och medaljen som var for
+// mycket lovat.
 
 import { prisma } from "./db";
-import { runAi } from "./ai/run";
 import { workCompleteXP } from "./xp";
-import type { Entitlements } from "./billing/entitlements";
 
-const MASTERED = ["mastered", "permanent"];
-
-export async function checkAndAwardMedal(
+/**
+ * Delar ut XP forsta gangen alla sektioner i ett verk sitter.
+ *
+ * Idempotent via AnalyticsEvent: samma verk betalar en gang. Utan den
+ * kontrollen betalade varje ovningspass om igen sa lange verket stod
+ * kvar som fardigt.
+ *
+ * Rakningen ar billig med flit — den kors efter VARJE avslutad ovning.
+ * En count-fraga i stallet for att lasa hem hela texten.
+ */
+export async function awardWorkCompletionXP(
   userId: string,
-  workId: string,
-  ent?: Entitlements
-): Promise<{ id: string; title: string; earnedAt: Date } | null> {
-  // Finns redan en medalj är vi klara direkt — billigaste kontrollen först
-  const existing = await prisma.medal.findFirst({
-    where:  { userId, workId },
-    select: { id: true },
-  });
-  if (existing) return null;
-
+  workId: string
+): Promise<{ xp: number; workTitle: string } | null> {
   const work = await prisma.work.findFirst({
     where:  { id: workId, userId },
-    select: { id: true, title: true, author: true },
+    select: { id: true, title: true },
   });
   if (!work) return null;
 
@@ -45,55 +52,32 @@ export async function checkAndAwardMedal(
     prisma.section.count({ where: { workId } }),
   ]);
 
-  // Inte klart än — eller ett tomt verk, som inte förtjänar en medalj
+  // Inte klart an — eller ett tomt verk, som inte fortjanar nagot.
   if (remaining > 0 || total === 0) return null;
 
-  // Sex ord när ett helt verk sitter. Går genom runAi() som allt annat,
-  // men räknas inte mot någons månadskvot — det är appens eget påhitt,
-  // inte något användaren bett om. Cachen delas på titel och författare,
-  // så alla som lär sig Invictus kostar ett enda anrop tillsammans.
-  let medalTitle = `Bearer of ${work.title}`;
-  if (ent) {
-    try {
-      const generated = await runAi<{ title: string }>({
-        userId,
-        ent,
-        feature: "medal_title",
-        cacheInput: { title: work.title, author: work.author },
-        build: () => ({
-          prompt:
-            `Give a four-to-six word honorific for someone who has committed ` +
-            `"${work.title}" by ${work.author} entirely to memory. Archaic, dignified, ` +
-            `classical. Examples: "Reciter of the Iliad", "Keeper of Hamlet's Words". ` +
-            `Return only the title.`,
-          maxTokens: 60,
-        }),
-        parse: raw => {
-          const title = raw.trim().replace(/^["']|["']$/g, "").slice(0, 80);
-          return title ? { title } : null;
-        },
-        fallback: () => ({ title: `Bearer of ${work.title}` }),
-      });
-      medalTitle = generated.data.title;
-    } catch {
-      // Behåll reservtiteln. En medalj ska delas ut även utan modellen.
-    }
-  }
+  // Har det redan betalats? Handelsen ar kvittot.
+  const already = await prisma.analyticsEvent.findFirst({
+    where: { userId, name: EVENT, props: { path: ["workId"], equals: workId } },
+    select: { id: true },
+  });
+  if (already) return null;
 
-  // XP skalar med verkets storlek — en sonett och Odysséen är inte
-  // samma bedrift
-  const reward = workCompleteXP(total);
+  const xp = workCompleteXP(total);
 
-  const [medal] = await prisma.$transaction([
-    prisma.medal.create({
-      data:   { userId, workId, title: medalTitle },
-      select: { id: true, title: true, earnedAt: true },
-    }),
+  await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
-      data:  { xp: { increment: reward } },
+      data:  { xp: { increment: xp } },
+    }),
+    prisma.analyticsEvent.create({
+      data: { userId, name: EVENT, props: { workId, sections: total, xp } },
     }),
   ]);
 
-  return medal;
+  return { xp, workTitle: work.title };
 }
+
+const MASTERED = ["mastered", "permanent"];
+
+/** Kvittot pa att ett verk redan betalat sin slutbonus. */
+const EVENT = "work_sections_complete";

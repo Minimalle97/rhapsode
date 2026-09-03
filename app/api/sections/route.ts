@@ -7,7 +7,7 @@ import { getEntitlements } from "@/lib/billing/entitlements";
 import { prisma } from "@/lib/db";
 import { sm2 } from "@/lib/sm2";
 import { calcXP, getRank, dailyBonus, XP } from "@/lib/xp";
-import { checkAndAwardMedal } from "@/lib/medals";
+import { awardWorkCompletionXP } from "@/lib/medals";
 import { recordPracticeSession } from "@/lib/streaks";
 import type { UpdateSectionPayload } from "@/types";
 
@@ -158,9 +158,12 @@ export async function PATCH(req: NextRequest) {
 
     const totalXpEarned = award.total + partBonus + streakBonus;
 
-    // Medalj för helt verk. Måste delas ut FÖRE saldot läses av — den ger
-    // XP den med, och tidigare rapporterades ett newXP som saknade den.
-    const medal = await checkAndAwardMedal(user.id, section.workId, ent);
+    // Slutbonus nar alla sektioner sitter. Maste delas ut FORE saldot
+    // lases av, annars rapporteras ett newXP som saknar den.
+    //
+    // Ingen medalj har. Mastartiteln och medaljen kommer BARA fran
+    // Performance Mode — se lib/medals.ts for varfor.
+    const completion = await awardWorkCompletionXP(user.id, section.workId);
 
     // Ny rank
     const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });
@@ -197,12 +200,13 @@ export async function PATCH(req: NextRequest) {
 
       partCompleted: partBonus > 0 ? partName : null,
 
-      medalAwarded: medal
-        ? {
-            ...medal,
-            workTitle: section.work.title,
-            author:    section.work.author,
-          }
+      // Kvar under sitt gamla namn sa att klienten inte behover andras,
+      // men det ar inte langre en medalj — det ar slutbonusen for att
+      // varje sektion sitter. Medaljen kommer fran framforandena.
+      medalAwarded: null,
+
+      sectionsComplete: completion
+        ? { xp: completion.xp, workTitle: completion.workTitle }
         : null,
 
       streak: {

@@ -37,38 +37,33 @@ export async function ProjectionCard({ workId }: { workId: string }) {
   if (p.tooSmall && p.percent < 100) return null;
   if (total === 0) return null;
 
+  // Bantad. Rutan hade en rubrik, en fras i trettio punkter och en
+  // underrad — tre vaningar for en enda uppgift, och den tog mer plats an
+  // framforandekortet ovanfor den. Nu ar allt en rad: frasen i
+  // lasstorlek, siffrorna direkt efter.
   return (
     <div style={{
       background:   "var(--bg2)",
       border:       "1px solid var(--bord)",
-      borderRadius: "var(--r)",
-      padding:      "20px 22px",
-      marginBottom: "26px",
+      borderRadius: "var(--r2)",
+      padding:      "13px 16px",
+      marginBottom: "20px",
     }}>
-      <p style={{
-        fontSize: "10px", letterSpacing: "0.2em", color: "var(--gold)",
-        textTransform: "uppercase", marginBottom: "14px",
-      }}>
-        The long arc
-      </p>
-
       <div style={{
         display: "flex", alignItems: "baseline",
-        gap: "12px", marginBottom: "10px", flexWrap: "wrap",
+        gap: "10px", flexWrap: "wrap", marginBottom: "2px",
       }}>
         <span style={{
-          fontFamily: "var(--fd)", fontSize: "30px",
-          fontWeight: 300,
+          fontFamily: "var(--fd)", fontSize: "17px", fontWeight: 400,
           color: p.percent === 100 ? "var(--gold)" : "var(--parch)",
         }}>
           {p.phrase}
         </span>
+        <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+          {p.mastered.toLocaleString()} of {p.total.toLocaleString()} sections held
+          {p.perWeek > 0 && ` · ${paceLine(p.perWeek).toLowerCase()}`}
+        </span>
       </div>
-
-      <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "16px" }}>
-        {p.mastered.toLocaleString()} of {p.total.toLocaleString()} sections held
-        {p.perWeek > 0 && ` · ${paceLine(p.perWeek).toLowerCase()}`}
-      </p>
 
       {/* Årsband — varje segment en månad framåt */}
       {p.weeksLeft !== null && p.weeksLeft > 8 && (

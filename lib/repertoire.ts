@@ -12,10 +12,14 @@
 //
 // ── Vad som raknas som avklarat ───────────────────────────────────────
 //
-// Verksmedaljen — alla sektioner bemastrade enligt SM-2, det appen kallar
-// "a work held entire". Inte framforandetiteln: den kraver tio rena
-// genomforanden per verk, och en grupp pa sjuttio dikter hade da krävt
-// sjuhundra. En grupp ska ga att ta.
+// Att HELA verket sitter enligt SM-2 — varje sektion i "mastered" eller
+// "permanent". Inte mastartiteln fran Performance Mode: den kraver tio
+// rena genomforanden per verk, och en grupp pa sjuttio dikter hade da
+// krävt sjuhundra. En grupp ska ga att ta.
+//
+// Villkoret las tidigare ur en "work"-medalj. Den medaljen delas inte ut
+// langre (se lib/medals.ts), sa samma matt raknas nu direkt ur
+// sektionerna. Kravet ar oforandrat i sak.
 //
 // ── Hur ett verk kopplas till en dikt i listan ────────────────────────
 //
@@ -45,6 +49,9 @@ export function groupById(id: string): RepertoireGroup | undefined {
 export function entryById(id: number): RepertoireEntry | undefined {
   return ALL_ENTRIES.find(e => e.id === id);
 }
+
+/** SM-2-lagena som raknas som att en sektion sitter. */
+const SM2_MASTERED = ["mastered", "permanent"];
 
 // ── Igenkanning ───────────────────────────────────────────────────────
 
@@ -146,7 +153,7 @@ function sameAuthor(listed: string, mine: string): boolean {
 export interface EntryState {
   /** Verket finns i biblioteket. */
   workId:   string | null;
-  /** Verksmedaljen ar utdelad — dikten sitter. Ger den grona markeringen. */
+  /** Varje sektion sitter enligt SM-2. Ger den grona markeringen. */
   held:     boolean;
 }
 
@@ -173,9 +180,16 @@ export async function repertoireState(userId: string): Promise<Map<number, Entry
     where:  { userId },
     select: {
       id: true, title: true, author: true, canonicalId: true,
-      // Verksmedaljen ar beviset. `kind: "work"` med flit — en battle-
-      // eller framforandemedalj sager nagot annat.
-      medals: { where: { kind: "work" }, select: { id: true }, take: 1 },
+      // Beviset raknas ur sektionerna, inte ur en medalj.
+      //
+      // Tidigare las det ur en "work"-medalj. Den medaljen delas inte ut
+      // langre — mastartiteln kommer nu bara fran Performance Mode, se
+      // lib/medals.ts — och hade den har fragan lamnats orord skulle inget
+      // verk nagonsin bli gront igen, och ingen grupp kunna bli klar.
+      //
+      // Villkoret ar oforandrat i sak: HELA verket sitter enligt SM-2. Det
+      // ar samma matt som forut, bara last direkt ur kallan.
+      sections: { select: { status: true } },
     },
   });
 
@@ -185,7 +199,9 @@ export async function repertoireState(userId: string): Promise<Map<number, Entry
     const entry = matchEntry(work);
     if (!entry) continue;
 
-    const held = work.medals.length > 0;
+    const held =
+      work.sections.length > 0 &&
+      work.sections.every(sec => SM2_MASTERED.includes(sec.status));
     const prev = state.get(entry.id);
 
     // Samma dikt kan ligga tva ganger i biblioteket. Den som sitter

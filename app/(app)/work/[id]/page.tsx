@@ -249,15 +249,14 @@ export default async function WorkPage({ params, searchParams }: Props) {
             <Link href={`/work/${work.id}/edit`} style={headerBtn}>
               Clean up
             </Link>
-            <Link href={`/work/${work.id}/read`} style={headerBtn}>
-              Read it through
-            </Link>
-            <Link href={`/work/${work.id}/drills`} style={headerBtn}>
-              Drills
-            </Link>
-            <Link href={`/work/${work.id}/recite`} style={headerBtn}>
-              Recite to a beat
-            </Link>
+            {/*
+              Ovningslagen bor INTE har uppe.
+              Raden ar verkets installningar — vem som ser det, och att
+              stada texten. Att lasa igenom, drilla och recitera i takt ar
+              satt att ARBETA med texten, och de hor darfor ihop med valet
+              av sektion langre ned. Har uppe konkurrerade de med rubriken
+              och sag ut som fem jamnstora knappar utan inbordes ordning.
+            */}
           </span>
         </div>
       </header>
@@ -323,6 +322,19 @@ export default async function WorkPage({ params, searchParams }: Props) {
         </div>
       )}
 
+      {/*
+        Satten att arbeta med texten, dar man faktiskt valjer att gora
+        det. Ligger ovanfor "Continue" sa att den som kommit for att ova
+        ser bade den vanliga vagen in och de andra i samma blick.
+      */}
+      {total > 0 && (
+        <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginBottom: "14px" }}>
+          <Link href={`/work/${work.id}/read`} style={practiceBtn}>Read it through</Link>
+          <Link href={`/work/${work.id}/drills`} style={practiceBtn}>Drills</Link>
+          <Link href={`/work/${work.id}/recite`} style={practiceBtn}>Recite to a beat</Link>
+        </div>
+      )}
+
       {nextSection && (
         <Link href={`/practice/${work.id}/${nextSection.id}`} style={{ textDecoration: "none", display: "block", marginBottom: "26px" }}>
           <div style={{
@@ -363,18 +375,24 @@ export default async function WorkPage({ params, searchParams }: Props) {
       {/* Den långa bågen — visas bara för verk stora nog att den säger något */}
       <ProjectionCard workId={work.id} />
 
+      {/*
+        Anteckningen om verket. Ingen ruta langre — den lag i en egen fylld
+        panel och tog lika mycket plats som allt man faktiskt kom hit for
+        att gora. Nu ar den en not: samma ord, mindre grad, och en tunn
+        linje i stallet for fyra kanter.
+      */}
       {work.analysis && (
         <div style={{
-          background: "var(--bg3)", border: "1px solid var(--bord)",
-          borderRadius: "var(--r)", padding: "20px 22px", marginBottom: "30px",
+          borderLeft: "2px solid var(--bord)",
+          paddingLeft: "16px", margin: "0 0 26px",
         }}>
-          <p style={{ fontSize: "13px", lineHeight: 1.75, color: "var(--parch2)", fontStyle: "italic" }}>
+          <p style={{ fontSize: "12.5px", lineHeight: 1.75, color: "var(--muted)", fontStyle: "italic" }}>
             {work.analysis}
           </p>
           {work.practiceAdvice && (
             <p style={{
               fontSize: "12px", lineHeight: 1.7, color: "var(--muted)",
-              marginTop: "14px", paddingTop: "14px", borderTop: "1px solid var(--bord)",
+              opacity: 0.8, marginTop: "10px",
             }}>
               {work.practiceAdvice}
             </p>
@@ -570,6 +588,18 @@ const backLink: React.CSSProperties = {
   fontSize: "13px", color: "var(--muted)",
   textDecoration: "none", display: "inline-block", marginBottom: "24px",
 };
+/** Ovningslagena. Dampade — de star bredvid "Continue", inte i stallet. */
+const practiceBtn: React.CSSProperties = {
+  padding:        "7px 14px",
+  borderRadius:   "var(--r3)",
+  border:         "1px solid var(--bord)",
+  background:     "transparent",
+  color:          "var(--parch2)",
+  fontSize:       "12.5px",
+  textDecoration: "none",
+  whiteSpace:     "nowrap",
+};
+
 const eyebrow: React.CSSProperties = {
   fontSize: "10px", letterSpacing: "0.2em",
   color: "var(--gold)", textTransform: "uppercase", marginBottom: "8px",

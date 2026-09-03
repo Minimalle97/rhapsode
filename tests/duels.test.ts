@@ -261,7 +261,7 @@ describe("a duel attempt touches nothing else", () => {
     for (const forbidden of [
       "xp:", "increment", "sm2", "nextReview",
       "practiceSession", "performance.create", "recordRun",
-      "checkAndAwardMedal", "recordMilestone", "recordPracticeSession",
+      "awardWorkCompletionXP", "recordMilestone", "recordPracticeSession",
     ]) {
       expect(body).not.toContain(forbidden);
     }
@@ -310,16 +310,17 @@ describe("the bubbles on the Friends tab", () => {
 
 // ── Privata verk ──────────────────────────────────────────────────────
 describe("a duel never names a private work in the feed", () => {
-  it("keeps the title out of the milestone body", () => {
-    // Samma regel som framforandena i performanceStore. posts.ts kan
-    // dolja titeln den LANKAR till, men inte orden i brodtexten — star
-    // titeln dar hamnar ett privat verks namn i vannernas flode.
-    const src   = read("lib/duels.ts");
-    const calls = src.match(/recordMilestone\([\s\S]*?\)\.catch/g) ?? [];
-    expect(calls.length).toBeGreaterThan(0);
-    for (const call of calls) {
-      expect(call).not.toMatch(/workTitle/);
-    }
+  it("posts nothing to the friends feed at all", () => {
+    // Starkare an forut. Tidigare skrevs en milstolpe utan verkets titel,
+    // och provet vaktade titeln. Nu skrivs ingen milstolpe alls: en
+    // tvekamp star MELLAN tva personer, och stallningen visas pa
+    // motstandarens profil i stallet for i ett flode alla scrollar forbi.
+    //
+    // Med noll inlagg kan inget privat verk namnges den vagen, sa den
+    // gamla oron ar borta snarare an bevakad.
+    const src = read("lib/duels.ts");
+    expect(src).not.toMatch(/recordMilestone/);
+    expect(src).not.toMatch(/from "\.\/posts"/);
   });
 
   it("only shows a battle medal's title when the work is public", () => {
