@@ -37,6 +37,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       durationSecs:   body.durationSecs,
       hesitations:    body.hesitations,
       longestPauseMs: body.longestPauseMs,
+      chunks:         Array.isArray(body.chunks)
+        ? body.chunks
+            .slice(0, 400)
+            .map((c: unknown) =>
+              Array.isArray(c)
+                ? c.filter((t): t is string => typeof t === "string")
+                   .map((t: string) => t.slice(0, 400))
+                   .slice(0, 8)
+                : []
+            )
+            .filter((c: string[]) => c.length > 0)
+        : [],
       hesitatedAt:    Array.isArray(body.hesitatedAt)
         ? body.hesitatedAt
             .map(Number)

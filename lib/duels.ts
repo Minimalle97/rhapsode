@@ -39,7 +39,7 @@
 import { prisma } from "./db";
 import { entitlementsForPlan, type Entitlements } from "./billing/entitlements";
 import { friendState } from "./friends";
-import { gradeAttempt } from "./cue";
+import { gradeAttempt, pickBestTranscript } from "./cue";
 import { accuracyPercent } from "./mastery";
 import { recordWholeWorkAttempt } from "./weakSpots";
 
@@ -556,6 +556,8 @@ export async function recordDuelAttempt(params: {
   longestPauseMs?: number;
   /** Platser i forsoket dar det blev tyst lange innan ordet kom. */
   hesitatedAt?:    number[];
+  /** Rostmotorns egna alternativ, en lista per bit. */
+  chunks?:         string[][];
 }): Promise<DuelAttemptResult> {
   const { duelId, userId, transcript } = params;
 
@@ -582,7 +584,15 @@ export async function recordDuelAttempt(params: {
   });
   if (sections.length === 0) throw new DuelError("There is nothing to perform.", 400);
 
-  const graded  = gradeAttempt(sections.map(s => s.content).join("\n\n"), transcript);
+  // Ocksa alltid talat. Motorns alternativ vags mot texten och homofoner
+  // raknas lika — se kommentaren i app/api/practice/grade.
+  const fullText = sections.map(s => s.content).join("\n\n");
+  const spoken   = { spoken: true };
+  const best     = (params.chunks?.length ?? 0) > 0
+    ? pickBestTranscript(fullText, params.chunks!, spoken)
+    : transcript;
+
+  const graded = gradeAttempt(fullText, best, spoken);
   const total   = graded.diff.length;
   const correct = graded.diff.filter(d => d.correct).length;
 

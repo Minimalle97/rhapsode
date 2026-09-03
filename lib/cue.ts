@@ -109,10 +109,69 @@ export interface Diff {
  * mot bindestreck. Att skriva "dont" istället för "don't" är inte att ha
  * glömt texten.
  */
+export interface GradeOptions {
+  /**
+   * Sant nar forsoket TALADES.
+   *
+   * Slar pa homofontolerans: "their" och "there" later exakt likadant, sa
+   * en rostmotor som valjer fel av dem sager ingenting om minnet. Att
+   * racka det som ett fel ar att straffa nagon for taligenkanningens
+   * gissning.
+   *
+   * Av for skrivna forsok, dar stavningen ar en del av det man ovar och
+   * "their" mot "there" ar ett riktigt fel.
+   */
+  spoken?: boolean;
+}
+
+/**
+ * Ord som later likadant och som rostmotorer standigt blandar ihop.
+ *
+ * Varje rad pekar mot en gemensam form. Listan ar med flit KORT: den ska
+ * tacka det som ar omojligt att hora skillnad pa, inte det som bara ar
+ * likt. Ju fler par som viks ihop, desto fler riktiga fel slinker
+ * igenom — och da ljuger poangen at andra hallet.
+ */
+const HOMOPHONES: Record<string, string> = {
+  their: "there", "they're": "there", there: "there",
+  to: "to", too: "to", two: "to",
+  your: "your", "you're": "your",
+  its: "its", "it's": "its",
+  hear: "here", here: "here",
+  for: "for", four: "for",
+  one: "one", won: "one",
+  no: "no", know: "no",
+  through: "through", threw: "through",
+  whole: "whole", hole: "whole",
+  soul: "soul", sole: "soul",
+  bear: "bear", bare: "bear",
+  by: "by", buy: "by", bye: "by",
+  // Formerna som verser anvander och motorn nastan alltid moderniserar.
+  "o'er": "over", over: "over",
+  "e'er": "ever", ever: "ever",
+  "ne'er": "never", never: "never",
+  "'tis": "tis", tis: "tis",
+};
+
+/** Siffror mot ord. "2" och "two" ar samma sak sagt hogt. */
+const NUMBERS: Record<string, string> = {
+  "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
+  "6": "six", "7": "seven", "8": "eight", "9": "nine", "10": "ten",
+};
+
+function canonical(word: string, spoken: boolean): string {
+  const n = NUMBERS[word] ?? word;
+  if (!spoken) return n;
+  return HOMOPHONES[n] ?? n;
+}
+
 export function gradeAttempt(
   original: string,
-  attempt:  string
+  attempt:  string,
+  options:  GradeOptions = {}
 ): { score: number; diff: Diff[]; missed: string[] } {
+  const spoken = options.spoken === true;
+
   const norm = (s: string) =>
     s.toLowerCase()
       .replace(/[’‘]/g, "'")
@@ -121,8 +180,14 @@ export function gradeAttempt(
       .replace(/\s+/g, " ")
       .trim();
 
+  // Orden som VISAS och rapporteras ar originalets egna. Kanonformen
+  // anvands bara for att avgora om tva ord ar samma — annars skulle
+  // "there" dyka upp i missade-listan for en text som sager "their".
   const origWords = norm(original).split(" ").filter(Boolean);
   const tryWords  = norm(attempt).split(" ").filter(Boolean);
+
+  const origKeys = origWords.map(w => canonical(w, spoken));
+  const tryKeys  = tryWords.map(w => canonical(w, spoken));
 
   if (origWords.length === 0) return { score: 0, diff: [], missed: [] };
 
@@ -135,7 +200,7 @@ export function gradeAttempt(
 
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
-      const cost = origWords[i - 1] === tryWords[j - 1] ? 0 : 1;
+      const cost = origKeys[i - 1] === tryKeys[j - 1] ? 0 : 1;
       d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
     }
   }
@@ -146,7 +211,7 @@ export function gradeAttempt(
   let i = n, j = m;
 
   while (i > 0) {
-    if (j > 0 && origWords[i - 1] === tryWords[j - 1] && d[i][j] === d[i - 1][j - 1]) {
+    if (j > 0 && origKeys[i - 1] === tryKeys[j - 1] && d[i][j] === d[i - 1][j - 1]) {
       diff.unshift({ word: origWords[i - 1], correct: true, at: j - 1 });
       i--; j--;
     } else if (j > 0 && d[i][j] === d[i - 1][j - 1] + 1) {
@@ -187,4 +252,68 @@ export function scoreToQuality(score: number, usedCue: CueLevel): number {
   else                  q = 0;
 
   return Math.min(q, ceiling[usedCue]);
+}
+
+// ── Att valja bland motorns egna gissningar ───────────────────────────
+
+/**
+ * Bygger det basta transkriptet ur rostmotorns alternativ.
+ *
+ * ── Varfor ────────────────────────────────────────────────────────────
+ *
+ * Web Speech ger flera hypoteser per yttrande, men appen las tidigare
+ * bara den forsta (`maxAlternatives` var aldrig satt, alltsa 1). Motorn
+ * hade alltsa ofta ratt ord som andra- eller tredjeval, och vi kastade
+ * bort det. Med en text vi REDAN KANNER ar det slosaktigt: vi kan fraga
+ * vilken av motorns egna gissningar som stammer bast.
+ *
+ * ── Varfor det ar arligt ──────────────────────────────────────────────
+ *
+ * Ingenting hittas pa. Alla kandidater kommer fran motorn; vi valjer
+ * bara vilken av dem som troligen var den avsedda. Det ar samma sak som
+ * en manniska gor nar hon hor otydligt och tolkar utifran sammanhang.
+ *
+ * Vad som INTE gors: ord som motorn aldrig foreslog laggs aldrig till.
+ * Sade nagon fel ord blir det fortfarande fel — det finns ingen
+ * kandidat med det ratta ordet att valja.
+ *
+ * ── Hur ────────────────────────────────────────────────────────────────
+ *
+ * Girigt, bit for bit. Man borjar med motorns forstahandsval rakt av och
+ * provar sedan varje alternativ pa varje bit; det som hojer poangen far
+ * sta kvar. En bit ar en mening eller fras, sa antalet kombinationer ar
+ * litet och rakningen billig.
+ */
+export function pickBestTranscript(
+  original: string,
+  chunks:   string[][],
+  options:  GradeOptions = {}
+): string {
+  if (chunks.length === 0) return "";
+
+  // Motorns forstahandsval, precis som forut. Utgangslaget.
+  const chosen = chunks.map(alts => alts[0] ?? "");
+
+  const scoreOf = (parts: string[]) =>
+    gradeAttempt(original, parts.join(" "), options).score;
+
+  let best = scoreOf(chosen);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const alternatives = chunks[i];
+    if (!alternatives || alternatives.length < 2) continue;
+
+    for (let a = 1; a < alternatives.length; a++) {
+      const trial = chosen.slice();
+      trial[i] = alternatives[a];
+
+      const score = scoreOf(trial);
+      if (score > best) {
+        best = score;
+        chosen[i] = alternatives[a];
+      }
+    }
+  }
+
+  return chosen.join(" ").replace(/\s+/g, " ").trim();
 }

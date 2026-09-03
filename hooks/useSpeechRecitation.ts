@@ -47,6 +47,23 @@ interface UseSpeechRecitationResult {
    * ratt ord. Darfor vager det mindre an en miss — se lib/weakSpots.ts.
    */
   hesitationIndices: number[];
+  /**
+   * Motorns EGNA alternativ, en lista per slutgiltig bit.
+   *
+   * Web Speech ger flera hypoteser per yttrande. Appen las tidigare bara
+   * den forsta och kastade resten — trots att servern kanner texten och
+   * darfor kan avgora vilken av dem som troligen var den avsedda. Se
+   * pickBestTranscript() i lib/cue.ts.
+   *
+   * Forsta posten i varje lista ar motorns forstahandsval, alltsa exakt
+   * det `transcript` bestar av.
+   *
+   * Interimtexten ingar som en SISTA bit med ett enda alternativ. Den ar
+   * nodvandig: Chrome hinner inte alltid gora sista frasen slutgiltig
+   * innan stop(), och utan den skulle listan sakna slutet av varje
+   * framforande — samma bortfall som transcript en gang hade.
+   */
+  chunks: string[][];
   /** Motorn är igång just nu. Kan blinka till falskt vid omstart. */
   isListening:       boolean;
   /** Vad anroparen bett om. Det här ska gränssnittet villkoras på. */
@@ -89,6 +106,7 @@ export function useSpeechRecitation(
   const [isActive, setIsActive]       = useState(false);
   const [transcript, setTranscript]   = useState("");
   const [hesitations, setHesitations] = useState<number[]>([]);
+  const [chunks, setChunks]           = useState<string[][]>([]);
   const [interim, setInterim]         = useState("");
   const [error, setError]             = useState<string | null>(null);
 
@@ -142,6 +160,7 @@ export function useSpeechRecitation(
       setInterim("");
       setError(null);
       setHesitations([]);
+      setChunks([]);
       wordsSoFar.current   = 0;
       lastResultAt.current = Date.now();
     }
@@ -150,15 +169,42 @@ export function useSpeechRecitation(
     recognition.lang           = langRef.current;
     recognition.continuous     = true;
     recognition.interimResults = true;
+    /**
+     * Fem hypoteser i stallet for en.
+     *
+     * Var tidigare osatt, alltsa 1 — motorns ovriga gissningar nadde
+     * aldrig fram, aven nar det ratta ordet lag bland dem. Fem ar nog
+     * for att fanga de vanliga forvaxlingarna utan att svaret blir stort;
+     * over ungefar sa manga borjar de sista kandidaterna vara brus.
+     */
+    recognition.maxAlternatives = 5;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       let finalChunk = "";
       let interimChunk = "";
+      // Alternativen samlas per slutgiltig bit. Interimtext har inga
+      // meningsfulla — den skrivs om medan man talar.
+      const freshAlternatives: string[][] = [];
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        if (result.isFinal) finalChunk += result[0].transcript;
-        else interimChunk += result[0].transcript;
+        if (result.isFinal) {
+          finalChunk += result[0].transcript;
+
+          const alts: string[] = [];
+          for (let a = 0; a < result.length; a++) {
+            const text = String(result[a]?.transcript ?? "").trim();
+            if (text && !alts.includes(text)) alts.push(text);
+          }
+          if (alts.length > 0) freshAlternatives.push(alts);
+        } else {
+          interimChunk += result[0].transcript;
+        }
+      }
+
+      if (freshAlternatives.length > 0) {
+        setChunks(prev => [...prev, ...freshAlternatives]);
       }
       if (finalChunk) {
         const text  = finalChunk.trim();
@@ -249,6 +295,7 @@ export function useSpeechRecitation(
     setInterim("");
     setError(null);
     setHesitations([]);
+    setChunks([]);
     wordsSoFar.current   = 0;
     lastResultAt.current = Date.now();
   }, []);
@@ -266,10 +313,17 @@ export function useSpeechRecitation(
     };
   }, []);
 
+  // Interimtexten laggs pa som en egen bit, sa att den som skickar
+  // `chunks` far med slutet av det som sades.
+  const chunksWithInterim = interim.trim()
+    ? [...chunks, [interim.trim()]]
+    : chunks;
+
   return {
     isSupported, isListening, isActive,
     transcript, interimTranscript: interim,
     hesitationIndices: hesitations,
+    chunks: chunksWithInterim,
     error, start, stop, reset,
   };
 }

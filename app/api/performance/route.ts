@@ -12,10 +12,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { session, rateLimit, toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
-import { gradeAttempt } from "@/lib/cue";
+import { gradeAttempt, pickBestTranscript } from "@/lib/cue";
 import { recordRun } from "@/lib/performanceStore";
 import { accuracyPercent } from "@/lib/mastery";
 import { recordWholeWorkAttempt } from "@/lib/weakSpots";
+
+
+/**
+ * Rostmotorns alternativ, saneras.
+ *
+ * Kommer fran klienten, sa formen far inte tas for given. Taken finns for
+ * att en illvillig eller trasig klient inte ska kunna skicka tiotusen
+ * kandidater och lata servern rakna igenom dem alla.
+ */
+function altsFrom(raw: unknown): string[][] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 400)
+    .map(chunk =>
+      Array.isArray(chunk)
+        ? chunk.filter((t): t is string => typeof t === "string")
+               .map(t => t.slice(0, 400))
+               .slice(0, 8)
+        : []
+    )
+    .filter(chunk => chunk.length > 0);
+}
 
 /** Se motsvarande funktion i practice/grade — samma sanering. */
 function hesitatedFrom(body: Record<string, unknown>): number[] {
@@ -58,7 +80,14 @@ export async function POST(req: NextRequest) {
     }
 
     const fullText = sections.map(s => s.content).join("\n\n");
-    const graded   = gradeAttempt(fullText, transcript);
+
+    // Ett framforande talas alltid. Se kommentaren i practice/grade.
+    const chunks = altsFrom(body.chunks);
+    const best   = chunks.length > 0
+      ? pickBestTranscript(fullText, chunks, { spoken: true })
+      : transcript;
+
+    const graded = gradeAttempt(fullText, best, { spoken: true });
 
     const total   = graded.diff.length;
     const correct = graded.diff.filter(d => d.correct).length;

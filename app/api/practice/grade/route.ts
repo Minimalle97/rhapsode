@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { session, rateLimit, toResponse } from "@/lib/http/guard";
 import { prisma } from "@/lib/db";
-import { gradeAttempt, scoreToQuality, type CueLevel } from "@/lib/cue";
+import { gradeAttempt, pickBestTranscript, scoreToQuality, type CueLevel } from "@/lib/cue";
 import { canUseFeature } from "@/lib/billing/entitlements";
 import { FEATURE } from "@/lib/billing/plans";
 import { runAi } from "@/lib/ai/run";
@@ -32,6 +32,28 @@ import { duelEntitlementsForSection } from "@/lib/duels";
 import { recordAttempt } from "@/lib/weakSpots";
 
 const CUES: CueLevel[] = ["full", "firstWord", "initials", "skeleton", "hidden"];
+
+/**
+ * Rostmotorns alternativ, saneras.
+ *
+ * Kommer fran klienten, sa formen far inte tas for given. Taken finns for
+ * att en illvillig eller trasig klient inte ska kunna skicka tiotusen
+ * kandidater och lata servern rakna igenom dem alla.
+ */
+function altsFrom(raw: unknown): string[][] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 400)
+    .map(chunk =>
+      Array.isArray(chunk)
+        ? chunk.filter((t): t is string => typeof t === "string")
+               .map(t => t.slice(0, 400))
+               .slice(0, 8)
+        : []
+    )
+    .filter(chunk => chunk.length > 0);
+}
+
 
 /**
  * Platserna i forsoket dar det blev tyst lange, saneras.
@@ -85,7 +107,26 @@ export async function POST(req: NextRequest) {
     const ent = await duelEntitlementsForSection(user.id, planEnt, section.id);
 
     // ── Det deterministiska lagret. Gäller alla, kostar ingenting. ────
-    const graded  = gradeAttempt(section.content, attempt);
+    //
+    // Talade forsok far tva saker som skrivna inte far:
+    //
+    //   Motorns egna alternativ vags mot texten, sa att ratt ord valjs
+    //   nar det lag som andra- eller tredjehandsval. Se
+    //   pickBestTranscript — ingenting hittas pa, det ar motorns egna
+    //   gissningar.
+    //
+    //   Homofoner raknas lika. "their" och "there" later identiskt, och
+    //   att racka motorns val av dem som ett minnesfel vore fel.
+    //
+    // Skrivna forsok far ingetdera: dar ar stavningen en del av ovningen.
+    const spoken = body.spoken === true;
+    const chunks = altsFrom(body.chunks);
+
+    const finalAttempt = chunks.length > 0
+      ? pickBestTranscript(section.content, chunks, { spoken })
+      : attempt;
+
+    const graded  = gradeAttempt(section.content, finalAttempt, { spoken });
     const quality = scoreToQuality(graded.score, cue);
     const total   = graded.diff.length;
     const correct = graded.diff.filter(d => d.correct).length;

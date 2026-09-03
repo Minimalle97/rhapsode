@@ -182,6 +182,8 @@ export function DuelPerformance({
           // Var i forsoket det blev tyst. Hooken raknar platserna; utan
           // dem gar en tvekan inte att lagga pa ratt rad.
           hesitatedAt:    speech.hesitationIndices,
+          // Motorns egna alternativ — servern valjer bland dem.
+          chunks:         speech.chunks,
         }),
       });
       const data = await res.json();

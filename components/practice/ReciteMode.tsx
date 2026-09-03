@@ -94,6 +94,10 @@ export function ReciteMode({ sectionId, onComplete }: ReciteModeProps) {
           attempt:     speech.transcript,
           cueLevel:    "hidden",
           hesitatedAt: speech.hesitationIndices,
+          // Motorns egna alternativ. Servern kanner texten och kan darfor
+          // avgora vilken av dem som troligen var den avsedda.
+          chunks:      speech.chunks,
+          spoken:      true,
         }),
       });
       const data = await res.json();
