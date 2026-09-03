@@ -98,6 +98,48 @@ export const CUE_WEIGHT: Record<CueLevel, number> = {
  */
 export const HESITATION_WEIGHT = 0.35;
 
+/**
+ * Under sa har stor andel ratta ord raknas forsoket inte alls.
+ *
+ * ── Varfor ────────────────────────────────────────────────────────────
+ *
+ * Ett forsok dar sju procent kom fram sager ingenting om VILKA ord som
+ * sitter daligt. Det sager att inspelningen inte fungerade, att man
+ * avbrot, att mikrofonen var av eller att fel sprak var valt. Rakas ett
+ * sadant forsok in markeras hela texten som svag pa en gang — och det ar
+ * precis vad som hande: tva trasiga framforanden pa sju och elva procent
+ * malade over en dikt vars riktiga forsok lag pa attio och nittio.
+ *
+ * Ett forsok bar information om enskilda ord forst nar merparten kom
+ * fram. Da betyder de ord som foll bort verkligen nagot; under den
+ * gransen ar det bruset som mats.
+ *
+ * Detta ar INTE samma sak som att dolja daliga resultat. Poangen och
+ * XP:n paverkas inte alls — de raknas som forut, i sina egna vagar.
+ * Det enda som star over ar den ordvisa svagheten, for den kraver ett
+ * forsok som gar att jamfora ord for ord.
+ */
+const MIN_RUN_ACCURACY = 0.5;
+
+/**
+ * Bar det har forsoket information om enskilda ord?
+ *
+ * Provas pa HELA korningen, aldrig pa en enskild sektion ur den.
+ *
+ * Skillnaden ar viktig. Ett framforande av hela verket dar man kan
+ * forsta halvan och tappar den andra ar ett aldeles utmarkt besked: den
+ * andra halvan sitter inte. Provades golvet per sektion skulle just den
+ * sektionen kastas bort som "trasig inspelning" — och da vore vakten
+ * blind for exakt det den finns for att fanga.
+ *
+ * Det som ska kastas ar korningar dar HELHETEN inte kom fram.
+ */
+function carriesSignal(diff: Diff[]): boolean {
+  if (diff.length === 0) return false;
+  const correct = diff.filter(d => d.correct).length;
+  return correct / diff.length >= MIN_RUN_ACCURACY;
+}
+
 export type Severity = "moderate" | "strong" | "severe";
 
 /** Trosklar pa missfrekvensen. Under den lagsta markeras ingenting. */
@@ -214,6 +256,13 @@ export interface AttemptContext {
    * hamnat pa fel rad sa fort nagon hoppat over ett ord.
    */
   hesitatedAt?: number[];
+  /**
+   * Hoppa over golvet for enskild traffsakerhet.
+   *
+   * Satts bara av recordWholeWorkAttempt, som redan provat korningen som
+   * helhet. Ingen annan bor satta den.
+   */
+  forceRecord?: boolean;
 }
 
 export async function recordAttempt(
@@ -222,6 +271,10 @@ export async function recordAttempt(
   ctx:       AttemptContext = {}
 ): Promise<void> {
   if (diff.length === 0) return;
+
+  // Ett forsok som knappt fick fram nagot alls sager inget om enskilda
+  // ord. Se carriesSignal().
+  if (!ctx.forceRecord && !carriesSignal(diff)) return;
 
   const existing = await prisma.sectionWeakness.findUnique({
     where:  { sectionId },
@@ -288,6 +341,11 @@ export async function recordWholeWorkAttempt(
   diff:     Diff[],
   ctx:      AttemptContext = {}
 ): Promise<void> {
+  // Golvet provas HAR, pa hela korningen — och sedan skrivs varje
+  // sektion oavsett hur den enskilda gick. En sektion som foll bort helt
+  // i ett i ovrigt bra framforande ar ett riktigt besked, inte brus.
+  if (!carriesSignal(diff)) return;
+
   let offset = 0;
 
   for (const section of sections) {
@@ -304,7 +362,8 @@ export async function recordWholeWorkAttempt(
     // Tvekningarna raknas i HELA forsokets ordfoljd, och `slice` bar sina
     // egna `at` som fortfarande pekar dit. De behover darfor inte rebasas
     // — de jamfors mot samma lista hela vagen.
-    await recordAttempt(section.id, slice, ctx).catch(() => {});
+    // forceRecord: golvet ar redan provat pa helheten ovan.
+    await recordAttempt(section.id, slice, { ...ctx, forceRecord: true }).catch(() => {});
   }
 }
 
@@ -357,6 +416,17 @@ const EMPTY: SectionWeakness = { enough: false, attempts: 0, words: [], saturate
  */
 const SATURATION = 0.5;
 
+/**
+ * Under sa har manga sparade ord galler saturationsvakten inte.
+ *
+ * Vakten finns for att en HEL dikt i orange inte upplyser om nagot. Pa en
+ * kort bit — en rad, en replik, en sista strof — ar "allt ar svagt" inte
+ * brus utan just vad som ar sant, och det finns inga "stallen" att skilja
+ * ut. Utan den har undre gransen tystades korta sektioner helt: fyra ord
+ * dar alla fyra sitter daligt kan omojligt understiga halva sektionen.
+ */
+const SATURATION_MIN_WORDS = 12;
+
 function toWeakness(row: { words: unknown; attempts: number } | null): SectionWeakness {
   if (!row) return EMPTY;
   if (row.attempts < MIN_ATTEMPTS) {
@@ -386,7 +456,7 @@ function toWeakness(row: { words: unknown; attempts: number } | null): SectionWe
   // skilja ut de verkliga stallena ur en text man borjat fa grepp om.
   // Ar aven det mesta kvar ar sektionen helt enkelt inte inlard an, och
   // da ar en helt overstruken dikt ingen upplysning.
-  if (tracked > 0 && words.length / tracked > SATURATION) {
+  if (tracked >= SATURATION_MIN_WORDS && words.length / tracked > SATURATION) {
     const worst = words.filter(w => w.severity === "severe");
     if (worst.length / tracked <= SATURATION) {
       return { enough: true, attempts: row.attempts, words: worst, saturated: false };

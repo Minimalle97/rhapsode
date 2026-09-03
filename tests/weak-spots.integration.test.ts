@@ -309,4 +309,65 @@ ${LINE_C}`;
     // Samma ord, samma vikt — tvekan la ingenting ovanpa missen.
     expect(a!.rate).toBeCloseTo(b!.rate, 6);
   });
+
+  // -- Trasiga inspelningar ------------------------------------------
+
+  it("ignores a run that captured almost nothing, however many times it happens", async () => {
+    // Det verkliga felet: tva framforanden pa 7 % och 11 % — trunkerade
+    // av en trasig inspelning — malade hela dikten orange, trots att de
+    // riktiga forsoken lag pa 80 och 91 procent.
+    const s = await prisma.section.create({
+      data: { workId, name: "botched", content: TEXT, orderIndex: 20 },
+      select: { id: true },
+    });
+
+    // Fem korningar dar nastan ingenting kom fram.
+    const barely = gradeAttempt(TEXT, "the").diff;
+    for (let i = 0; i < 5; i++) await recordAttempt(s.id, barely);
+
+    const after = await weaknessFor(s.id);
+    // Ingenting skrevs: raden finns inte ens.
+    expect(after.enough).toBe(false);
+    expect(after.attempts).toBe(0);
+    expect(spansFor(TEXT, after)).toEqual([]);
+  });
+
+  it("still records a run that mostly came through", async () => {
+    // Gransen far inte tysta riktiga forsok. Har faller en rad bort av
+    // tre — det ar precis den sortens forsok markeringen finns for.
+    const s = await prisma.section.create({
+      data: { workId, name: "genuine", content: TEXT, orderIndex: 21 },
+      select: { id: true },
+    });
+
+    const good = gradeAttempt(TEXT, `${LINE_A}
+${LINE_C}`).diff;
+    for (let i = 0; i < 3; i++) await recordAttempt(s.id, good);
+
+    const after = await weaknessFor(s.id);
+    expect(after.enough).toBe(true);
+    expect(spansFor(TEXT, after).length).toBeGreaterThan(0);
+  });
+
+  it("does not paint the whole section when a run is merely poor", async () => {
+    // Saturationsvakten: ar nastan allt svagt ar ingenting det.
+    const s = await prisma.section.create({
+      data: { workId, name: "saturated", content: TEXT, orderIndex: 22 },
+      select: { id: true },
+    });
+
+    // Precis over golvet, men nastan allt fel.
+    const words = TEXT.split(/\s+/);
+    const half  = words.slice(0, Math.ceil(words.length * 0.55)).join(" ");
+    for (let i = 0; i < 3; i++) await recordAttempt(s.id, gradeAttempt(TEXT, half).diff);
+
+    const after = await weaknessFor(s.id);
+    if (after.saturated) {
+      expect(spansFor(TEXT, after)).toEqual([]);
+    } else {
+      // Annars ska atminstone inte HELA texten vara markerad.
+      const covered = spansFor(TEXT, after).reduce((n, sp) => n + (sp.end - sp.start), 0);
+      expect(covered).toBeLessThan(TEXT.length);
+    }
+  });
 });

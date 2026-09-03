@@ -219,6 +219,41 @@ describe("weakness comes from what the user did", () => {
     expect(min).toBeLessThanOrEqual(afterTwo);
   });
 
+  it("ignores a run that barely captured anything", () => {
+    // En inspelning som fick fram sju procent sager inget om VILKA ord
+    // som sitter daligt — den sager att inspelningen inte fungerade.
+    // Rakas den in malas hela dikten orange, vilket ar precis vad som
+    // hande: tva trasiga framforanden pa 7 % och 11 % slog ut en text
+    // vars riktiga forsok lag pa 80 och 91.
+    expect(src).toMatch(/const MIN_RUN_ACCURACY = /);
+    expect(src).toMatch(/function carriesSignal/);
+  });
+
+  it("judges the whole run, not each section of it", () => {
+    // Provades golvet per sektion skulle en sektion man glomt HELT i ett
+    // annars bra framforande kastas bort som "trasig inspelning" — och da
+    // vore vakten blind for precis det den finns for att fanga.
+    const fn   = src.slice(src.indexOf("export async function recordWholeWorkAttempt"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toMatch(/carriesSignal\(diff\)/);
+    expect(body).toMatch(/forceRecord: true/);
+  });
+
+  it("does not silence a short section where everything really is weak", () => {
+    // Saturationsvakten galler en dikt, inte fyra ord. Utan den undre
+    // gransen tystades korta sektioner helt.
+    expect(src).toMatch(/const SATURATION_MIN_WORDS = /);
+    expect(src).toMatch(/tracked >= SATURATION_MIN_WORDS/);
+  });
+
+  it("applies that floor before anything is written", () => {
+    // Kontrollen maste ligga fore skrivningen, annars ar raden redan
+    // forgiftad nar den upptacks.
+    const fn   = src.slice(src.indexOf("export async function recordAttempt"));
+    const body = fn.slice(0, fn.indexOf("prisma.sectionWeakness.upsert"));
+    expect(body).toMatch(/carriesSignal/);
+  });
+
   it("says nothing when nearly the whole section is weak", () => {
     // Med tva forsok pa en ny dikt ligger nittio procent av orden over
     // troskeln. En text dar allt ar markerat upplyser lika lite som en

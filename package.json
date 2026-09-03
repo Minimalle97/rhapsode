@@ -13,6 +13,7 @@
     "verify": "tsc --noEmit && vitest run && next build",
     "codes": "node --env-file=.env scripts/access-code.mjs",
     "handles:backfill": "node --env-file=.env scripts/backfill-handles.mjs",
+    "weakspots:reset": "node --env-file=.env scripts/reset-weak-spots.mjs",
     "stripe:verify": "node --env-file=.env scripts/stripe-setup.mjs verify",
     "stripe:apply": "node --env-file=.env scripts/stripe-setup.mjs apply",
     "hooks:install": "git config core.hooksPath .githooks"
